@@ -1,0 +1,60 @@
+name: CI/CD Pipeline
+
+# CI chạy khi có push hoặc pull request vào nhánh main
+# CD (deploy) chỉ chạy khi merge/push thẳng vào main
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ---------- CONTINUOUS INTEGRATION ----------
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cài đặt Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Cài dependencies
+        run: npm ci
+
+      - name: Kiểm tra code style (lint)
+        run: npm run lint --if-present
+
+      - name: Chạy unit test
+        run: npm test
+
+  # ---------- CONTINUOUS DEPLOYMENT ----------
+  deploy:
+    name: Deploy
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t auto-narration-be:${{ github.sha }} .
+
+      # Thay bước dưới bằng lệnh deploy thật của nhóm bạn, ví dụ:
+      # - SSH lên VPS rồi docker pull + docker run
+      # - hoặc deploy lên Render/Railway bằng CLI/webhook
+      - name: Deploy (placeholder)
+        run: |
+          echo "✅ Build thành công. Ở đây sẽ đẩy image lên server thật."
+          echo "Ví dụ: ssh user@server 'docker pull ... && docker restart ...'"
