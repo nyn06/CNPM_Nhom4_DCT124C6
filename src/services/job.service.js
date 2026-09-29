@@ -1,16 +1,3 @@
-/**
- * SERVICE LAYER (Business Logic Layer)
- * -------------------------------------
- * Chứa toàn bộ logic nghiệp vụ: tạo job, điều phối các bước xử lý
- * (Speech-to-Text -> Translation -> Text-to-Speech).
- * Service KHÔNG biết dữ liệu được lưu ở đâu (Map, MySQL, Mongo...)
- * -> nó chỉ gọi qua Repository.
- * Service KHÔNG tự đọc req/res của HTTP -> đó là việc của Controller.
- *
- * Trong đồ án thật: thay các hàm mock*() bằng lời gọi API thật
- * (Google Speech-to-Text, Google Translate, Google/Amazon TTS...).
- */
-
 const { v4: uuidv4 } = require('uuid');
 const jobRepository = require('../repositories/job.repository');
 
@@ -64,25 +51,36 @@ class JobService {
   }
 
   _processJob(jobId) {
-    setTimeout(() => {
-      const job = jobRepository.findById(jobId);
-      if (!job) return;
+  const timer = setTimeout(() => {
+    const job = jobRepository.findById(jobId);
 
-      try {
-        const transcript = mockSpeechToText(job.fileName);
-        const translated = mockTranslate(transcript, job.targetLang);
-        const audioFile = mockTextToSpeech(translated);
+    if (!job) {
+      return;
+    }
 
-        jobRepository.update(jobId, {
-          status: 'done',
-          resultText: translated,
-          resultAudioFile: audioFile,
-        });
-      } catch (e) {
-        jobRepository.update(jobId, { status: 'failed' });
-      }
-    }, 1500); // giả lập độ trễ xử lý AI
-  }
+    try {
+      const transcript = mockSpeechToText(job.fileName);
+      const translated = mockTranslate(
+        transcript,
+        job.targetLang
+      );
+
+      const audioFile = mockTextToSpeech(translated);
+
+      jobRepository.update(jobId, {
+        status: 'done',
+        resultText: translated,
+        resultAudioFile: audioFile,
+      });
+    } catch (error) {
+      jobRepository.update(jobId, {
+        status: 'failed',
+      });
+    }
+  }, 1500);
+
+  timer.unref();
+}
 
   getJob(id) {
     const job = jobRepository.findById(id);
