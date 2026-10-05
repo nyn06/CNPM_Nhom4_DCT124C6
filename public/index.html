@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f5f0">
+  <meta name="description" content="Khám phá các điểm ẩm thực bằng GPS thật hoặc giả lập vị trí. WebApp demo thuyết minh theo vị trí.">
+  <title>Vị Giác — Khám phá ẩm thực theo vị trí</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/app.js" defer></script>
+</head>
+<body>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="icon-pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="icon-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></symbol>
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="icon-audio" viewBox="0 0 24 24"><path d="M4 13v-1a8 8 0 0 1 16 0v1M4 12H3v8h4v-8H4Zm16 0h1v8h-4v-8h3Z"/></symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M5 8a8 8 0 0 1 13-3l2 3M4 16l2 3a8 8 0 0 0 13-3"/></symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  </svg>
+
+  <a class="skip-link" href="#main">Đến nội dung chính</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/" aria-label="Vị Giác — trang chủ">
+        <span class="brand-mark"><svg class="icon"><use href="#icon-pin"/></svg></span>
+        <span>Vị Giác<span class="brand-caption">MỖI ĐIỂM ĐẾN, MỘT CÂU CHUYỆN</span></span>
+      </a>
+      <div class="language-control">
+        <label for="language">Ngôn ngữ thuyết minh</label>
+        <select id="language" aria-describedby="language-note">
+          <option value="vi">Tiếng Việt</option>
+          <option value="en">English</option>
+          <option value="ja">日本語</option>
+          <option value="ko">한국어</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="page">
+    <section class="hero" aria-labelledby="page-title">
+      <div class="eyebrow"><span class="small-line"></span> KHÁM PHÁ ẨM THỰC · BẢN DEMO</div>
+      <h1 id="page-title">HỆ THỐNG THUYẾT MINH TỰ ĐỘNG<br class="desktop-break"> <span>ĐA NGÔN NGỮ</span></h1>
+      <p>Khám phá các điểm ẩm thực theo vị trí của bạn.</p>
+      <a class="text-link" href="#poi-section">Xem các điểm đến <svg class="icon"><use href="#icon-arrow"/></svg></a>
+    </section>
+
+    <noscript><p class="notice" data-tone="error">Hãy bật JavaScript để sử dụng GPS và kiểm tra địa điểm.</p></noscript>
+    <div class="workspace">
+      <section class="panel location-panel" aria-labelledby="location-title">
+        <div class="section-heading"><span class="step-number">01</span><h2 id="location-title">Vị trí của bạn</h2></div>
+        <span id="gps-status" class="badge" data-tone="neutral" role="status">Chưa bật GPS</span>
+        <dl class="coordinates">
+          <div><dt>Latitude</dt><dd id="current-lat">—</dd></div>
+          <div><dt>Longitude</dt><dd id="current-lng">—</dd></div>
+          <div><dt>Độ chính xác</dt><dd id="current-accuracy">—</dd></div>
+          <div><dt>Nguồn vị trí</dt><dd id="current-source">Chưa có</dd></div>
+        </dl>
+        <div class="gps-actions">
+          <button id="start-gps" class="button primary" type="button"><svg class="icon"><use href="#icon-target"/></svg>Bắt đầu định vị</button>
+          <button id="stop-gps" class="button secondary" type="button" disabled>Dừng định vị</button>
+        </div>
+        <p id="gps-message" class="helper" role="status">Chỉ yêu cầu quyền vị trí khi bạn bấm bắt đầu.</p>
+
+        <div class="simulation" id="simulation">
+          <div class="subheading"><h3>Giả lập GPS</h3><span class="tag">CHẾ ĐỘ DEMO</span></div>
+          <p class="helper">Thử một tọa độ để khám phá mà không cần di chuyển.</p>
+          <form id="simulation-form" novalidate>
+            <div class="input-grid">
+              <div><label for="demo-lat">Latitude</label><input id="demo-lat" name="lat" type="text" inputmode="decimal" placeholder="10.123456" autocomplete="off" aria-describedby="simulation-message" required></div>
+              <div><label for="demo-lng">Longitude</label><input id="demo-lng" name="lng" type="text" inputmode="decimal" placeholder="106.123456" autocomplete="off" aria-describedby="simulation-message" required></div>
+            </div>
+            <button id="check-simulation" class="button dark full-width" type="submit">Kiểm tra vị trí giả lập <svg class="icon"><use href="#icon-arrow"/></svg></button>
+          </form>
+          <p id="simulation-message" class="helper" role="status">Hoặc chọn tọa độ từ danh sách địa điểm bên dưới.</p>
+        </div>
+      </section>
+
+      <div class="discovery-column">
+        <section id="geofence-panel" class="panel discovery-panel" data-state="idle" aria-labelledby="discovery-title" aria-busy="false">
+          <div class="result-header"><div class="section-heading"><span class="step-number">02</span><h2 id="discovery-title">Khám phá quanh bạn</h2></div><span id="geofence-badge" class="badge" data-tone="neutral">Chờ vị trí</span></div>
+          <div id="result-empty" class="result-empty" role="status" aria-live="polite">
+            <div class="location-art" aria-hidden="true"><span class="orbit orbit-one"></span><span class="orbit orbit-two"></span><span class="orbit-dot"></span><span class="art-pin"><svg class="icon"><use href="#icon-pin"/></svg></span><span class="art-cross">+</span></div>
+            <p class="eyebrow">MỘT HÀNH TRÌNH ĐANG CHỜ BẠN</p>
+            <h3 id="result-title">Bạn đang ở đâu?</h3>
+            <p id="result-message">Bật định vị hoặc thử GPS giả lập để tìm những câu chuyện ẩm thực quanh mình.</p>
+          </div>
+          <article id="nearest-card" class="nearest-card" hidden aria-live="polite">
+            <div class="arrival-label"><svg class="icon"><use href="#icon-check"/></svg>ĐÃ ĐẾN ĐỊA ĐIỂM</div>
+            <h3 id="nearest-name"></h3>
+            <p id="nearest-address" class="nearest-address"></p>
+            <p id="nearest-description" class="nearest-description"></p>
+            <div class="distance-grid"><div><span>Khoảng cách</span><strong id="nearest-distance"></strong></div><div><span>Bán kính kích hoạt</span><strong id="nearest-radius"></strong></div></div>
+            <p class="ready-label"><span class="status-dot"></span>Sẵn sàng thuyết minh</p>
+            <p id="matched-count" class="helper"></p>
+          </article>
+          <div class="result-footer"><span id="result-source">Chưa kiểm tra vị trí</span><span id="result-time">—</span></div>
+        </section>
+
+        <section class="audio-panel" aria-labelledby="audio-title">
+          <span class="audio-icon"><svg class="icon"><use href="#icon-audio"/></svg></span>
+          <div><div class="subheading"><h2 id="audio-title">Thuyết minh</h2><span class="tag">SẮP CÓ</span></div><p>Audio đa ngôn ngữ sẽ được bổ sung ở giai đoạn tiếp theo.</p><span id="language-note" class="helper">Đang chọn: Tiếng Việt · Chỉ lưu lựa chọn ngôn ngữ.</span></div>
+          <button type="button" class="audio-play" disabled aria-label="Phát thuyết minh — chưa có audio">▶</button>
+        </section>
+      </div>
+    </div>
+
+    <section id="poi-section" class="poi-section" aria-labelledby="poi-title">
+      <div class="poi-section-heading"><div><div class="eyebrow">ĐIỂM ĐẾN ẨM THỰC</div><h2 id="poi-title">Một điểm dừng, một khám phá.</h2><p id="poi-count" class="helper">Đang tải danh sách địa điểm…</p></div><button id="reload-pois" class="button secondary" type="button"><svg class="icon"><use href="#icon-refresh"/></svg>Tải lại danh sách</button></div>
+      <p id="poi-message" class="notice" role="status" aria-live="polite">Đang tải danh sách POI…</p>
+      <div id="poi-list" class="poi-grid" aria-busy="true"></div>
+    </section>
+
+    <details class="demo-help"><summary>Demo trong 3 bước <span>Chọn địa điểm → Giả lập vị trí → Xem kết quả</span></summary><ol><li>Chọn một địa điểm đang hoạt động và bấm “Dùng tọa độ này để giả lập”.</li><li>Bấm “Kiểm tra vị trí giả lập” để nhận kết quả từ hệ thống.</li><li>Thử tọa độ ở xa để thấy trạng thái ngoài phạm vi, hoặc bật định vị để dùng GPS thật.</li></ol><p>GPS thật cần HTTPS hoặc localhost và quyền vị trí của trình duyệt. Nếu chưa có địa điểm, hãy tạo POI bằng API theo README rồi tải lại danh sách.</p></details>
+    <footer class="site-footer"><span>Vị Giác <span class="footer-dot">·</span> Khám phá qua từng điểm chạm.</span><span>WebApp demo · GPS &amp; Geofence</span></footer>
+  </main>
+
+  <template id="poi-template">
+    <article class="poi-card">
+      <div class="poi-card-top"><span class="poi-symbol"><svg class="icon"><use href="#icon-pin"/></svg></span><span class="poi-status badge"></span></div>
+      <p class="poi-category eyebrow"></p><h3 class="poi-name"></h3><p class="poi-address"></p>
+      <dl class="poi-facts"><div><dt>Tọa độ</dt><dd class="poi-coordinates"></dd></div><div><dt>Bán kính</dt><dd class="poi-radius"></dd></div></dl>
+      <button type="button" class="button poi-use">Dùng tọa độ này để giả lập <svg class="icon"><use href="#icon-arrow"/></svg></button>
+    </article>
+  </template>
+</body>
+</html>
