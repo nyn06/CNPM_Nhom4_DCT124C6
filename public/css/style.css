@@ -113,6 +113,9 @@ input[aria-invalid="true"] { border-color: #b93d31; }
 .distance-grid strong { display: block; font-size: 26px; line-height: 1.4; color: var(--green); font-weight: 650; font-variant-numeric: tabular-nums; }
 .ready-label { display: flex; align-items: center; gap: 7px; color: var(--green); font-size: 12px; font-weight: 650; margin: 8px 0 0; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.narration-panel { padding: 24px; }
+.narration-text { margin-top: 16px; font-size: 15px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
+#retry-narration { margin-top: 12px; }
 .audio-panel { display: flex; align-items: center; gap: 17px; padding: 22px 24px; border: 1px solid #dedfcf; border-radius: 13px; background: #efeee3; }
 .audio-icon { width: 44px; height: 44px; background: #e3e3d5; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; color: #727965; }
 .audio-panel h2 { font-size: 16px; }

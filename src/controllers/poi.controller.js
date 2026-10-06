@@ -32,6 +32,39 @@ class PoiController {
     }
   }
 
+  setVietnameseNarration(req, res, next) {
+    try {
+      res.status(200).json(poiService.setVietnameseNarration(req.params.id, req.body));
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  getPoiNarration(req, res, next) {
+    try {
+      res.status(200).json(poiService.getPoiNarration(req.params.id, req.params.language));
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  getPoiNarrations(req, res, next) {
+    try {
+      res.status(200).json(poiService.getPoiNarrations(req.params.id));
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async createTranslations(req, res, next) {
+    try {
+      const result = await poiService.createTranslations(req.params.id, req.body);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   getPoi(req, res, next) {
     try {
       const poi = poiService.getPoi(req.params.id);

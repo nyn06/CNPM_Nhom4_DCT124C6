@@ -8,6 +8,7 @@
   <title>Vị Giác — Khám phá ẩm thực theo vị trí</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/css/style.css">
+  <script src="/js/poi-languages.js" defer></script>
   <script src="/js/app.js" defer></script>
 </head>
 <body>
@@ -30,10 +31,7 @@
       <div class="language-control">
         <label for="language">Ngôn ngữ thuyết minh</label>
         <select id="language" aria-describedby="language-note">
-          <option value="vi">Tiếng Việt</option>
-          <option value="en">English</option>
-          <option value="ja">日本語</option>
-          <option value="ko">한국어</option>
+          <option value="">Đang tải…</option>
         </select>
       </div>
     </div>
@@ -99,9 +97,16 @@
           <div class="result-footer"><span id="result-source">Chưa kiểm tra vị trí</span><span id="result-time">—</span></div>
         </section>
 
+        <section id="narration-panel" class="panel narration-panel" aria-labelledby="narration-title" aria-busy="false">
+          <div class="subheading"><h2 id="narration-title">Thuyết minh</h2><span class="tag">NỘI DUNG TEXT</span></div>
+          <p id="narration-status" class="helper" role="status">Đến một địa điểm để xem nội dung thuyết minh.</p>
+          <div id="narration-text" class="narration-text" hidden></div>
+          <button id="retry-narration" type="button" class="button secondary" hidden>Thử tải lại nội dung</button>
+        </section>
+
         <section class="audio-panel" aria-labelledby="audio-title">
           <span class="audio-icon"><svg class="icon"><use href="#icon-audio"/></svg></span>
-          <div><div class="subheading"><h2 id="audio-title">Thuyết minh</h2><span class="tag">SẮP CÓ</span></div><p>Audio đa ngôn ngữ sẽ được bổ sung ở giai đoạn tiếp theo.</p><span id="language-note" class="helper">Đang chọn: Tiếng Việt · Chỉ lưu lựa chọn ngôn ngữ.</span></div>
+          <div><div class="subheading"><h2 id="audio-title">Audio thuyết minh</h2><span class="tag">SẮP CÓ</span></div><p>Audio đa ngôn ngữ sẽ được bổ sung ở giai đoạn tiếp theo.</p><span id="language-note" class="helper">Ngôn ngữ áp dụng cho nội dung thuyết minh dạng text.</span></div>
           <button type="button" class="audio-play" disabled aria-label="Phát thuyết minh — chưa có audio">▶</button>
         </section>
       </div>

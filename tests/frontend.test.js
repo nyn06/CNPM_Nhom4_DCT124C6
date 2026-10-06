@@ -4,6 +4,7 @@ const vm = require('vm');
 
 const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
 const script = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8');
+const languageScript = fs.readFileSync(path.join(__dirname, '../public/js/poi-languages.js'), 'utf8');
 const jsonResponse = (data) => ({ ok: true, json: async () => data });
 const outside = { insideGeofence: false, nearestPoi: null, pois: [] };
 
@@ -32,8 +33,8 @@ async function setup(options = {}) {
     localStorage.setItem.mockImplementation(() => { throw new Error('Storage blocked'); });
   }
   const window = { isSecureContext: options.secure !== false, addEventListener: jest.fn() };
-  vm.runInNewContext(script, {
-    document: { getElementById: (id) => elements[id] },
+  vm.runInNewContext(languageScript + '\n' + script, {
+    document: { getElementById: (id) => elements[id], createElement },
     window, navigator: { geolocation: options.unsupported ? undefined : geolocation },
     localStorage, fetch, AbortController, URLSearchParams, TypeError,
     Date, setTimeout, clearTimeout,
@@ -130,8 +131,9 @@ describe('Frontend: GPS và request', () => {
     elements['start-gps'].events.click();
     geolocation.watchPosition.mock.calls[0][0]({ coords: { latitude: 10, longitude: 106, accuracy: 25 } });
 
-    const poi = { name: '<img src=x onerror=alert(1)>', distance: 0, geofenceRadius: 50, description: 'Demo' };
+    const poi = { id: 'poi-demo', name: '<img src=x onerror=alert(1)>', distance: 0, geofenceRadius: 50, description: 'Demo' };
     fetch.mockResolvedValueOnce(jsonResponse({ insideGeofence: true, nearestPoi: poi, pois: [poi] }));
+    fetch.mockResolvedValueOnce(jsonResponse({ poiId: poi.id, language: 'vi', text: 'Nội dung' }));
     submit(elements, '11', '107');
     await jest.advanceTimersByTimeAsync(0);
     finishOldRequest(jsonResponse(outside));
@@ -141,7 +143,8 @@ describe('Frontend: GPS và request', () => {
     expect(elements['current-source'].textContent).toBe('GPS giả lập');
     expect(elements['geofence-panel'].dataset.state).toBe('inside');
     expect(elements['nearest-name'].textContent).toBe(`Đã đến ${poi.name}`);
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch.mock.calls[3][0]).toBe('/api/pois/poi-demo/narrations/vi');
   });
 
   it.each([[1, 'GPS bị từ chối'], [2, 'GPS không khả dụng'], [3, 'GPS lỗi']])(
@@ -189,5 +192,153 @@ describe('Frontend: GPS và request', () => {
 
     expect(elements['result-message'].textContent).toContain('quá thời gian chờ');
     expect(elements['check-simulation'].disabled).toBe(false);
+  });
+});
+
+describe('Frontend: narration theo ngôn ngữ', () => {
+  const poi = { id: 'food-1', name: 'Phở Việt Nam', distance: 0, geofenceRadius: 50, updatedAt: 'v1' };
+  const inside = { insideGeofence: true, nearestPoi: poi, pois: [poi] };
+  const narration = (language, text) => jsonResponse({ poiId: poi.id, language, text });
+
+  async function arrive(options) {
+    const ui = await setup(options);
+    ui.fetch.mockResolvedValueOnce(jsonResponse(inside));
+    ui.fetch.mockResolvedValueOnce(narration(options?.language || 'vi', 'Nội dung đã lưu'));
+    submit(ui.elements, '10', '106');
+    await jest.advanceTimersByTimeAsync(0);
+    return ui;
+  }
+
+  it('đến POI tải VI; đổi EN/JA/KO chỉ GET narration, không gọi lại GPS/geofence', async () => {
+    const { elements, fetch, geolocation } = await arrive();
+    expect(fetch.mock.calls[2][0]).toBe('/api/pois/food-1/narrations/vi');
+    expect(elements['narration-text'].textContent).toBe('Nội dung đã lưu');
+    expect(elements['narration-text'].hidden).toBe(false);
+    for (const [language, name] of [['en', 'English'], ['ja', '日本語'], ['ko', '한국어']]) {
+      fetch.mockResolvedValueOnce(narration(language, `Fixture ${language}`));
+      elements.language.value = language;
+      elements.language.events.change();
+      expect(elements['narration-text'].hidden).toBe(true);
+      await jest.advanceTimersByTimeAsync(0);
+      expect(fetch.mock.calls.at(-1)[0]).toBe(`/api/pois/food-1/narrations/${language}`);
+      expect(elements['narration-title'].textContent).toBe(`Thuyết minh – ${name}`);
+      expect(elements['narration-text'].textContent).toBe(`Fixture ${language}`);
+      expect(elements['narration-text'].attributes.lang).toBe(language);
+    }
+    expect(fetch).toHaveBeenCalledTimes(6);
+    expect(fetch.mock.calls.filter(([url]) => url.includes('/nearby'))).toHaveLength(1);
+    expect(geolocation.watchPosition).not.toHaveBeenCalled();
+    expect(fetch.mock.calls.every(([url]) => url.startsWith('/api/pois'))).toBe(true);
+  });
+
+  it('ngôn ngữ đã lưu được dùng ngay khi đến POI', async () => {
+    const { fetch, elements } = await arrive({ language: 'ja' });
+    expect(fetch.mock.calls[2][0]).toBe('/api/pois/food-1/narrations/ja');
+    expect(elements['narration-title'].textContent).toContain('日本語');
+  });
+
+  it('404 không fallback VI hoặc giữ nội dung cũ; có thể thử tải lại', async () => {
+    const { elements, fetch } = await arrive();
+    fetch.mockResolvedValueOnce({ ok: false, status: 404, json: async () => ({ error: 'Not found' }) });
+    elements.language.value = 'ja';
+    elements.language.events.change();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['narration-status'].textContent).toBe('Chưa có nội dung thuyết minh cho ngôn ngữ này.');
+    expect(elements['narration-text'].hidden).toBe(true);
+    expect(elements['narration-text'].textContent).toBe('');
+    expect(elements['retry-narration'].hidden).toBe(false);
+    fetch.mockResolvedValueOnce(narration('ja', '新しい内容'));
+    elements['retry-narration'].events.click();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['narration-text'].textContent).toBe('新しい内容');
+    expect(elements['narration-text'].hidden).toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(5);
+  });
+
+  it('phản hồi EN đến muộn không ghi đè JA vừa chọn', async () => {
+    const { elements, fetch } = await arrive();
+    let finishEnglish;
+    fetch.mockReturnValueOnce(new Promise((resolve) => { finishEnglish = resolve; }));
+    elements.language.value = 'en';
+    elements.language.events.change();
+    const oldSignal = fetch.mock.calls.at(-1)[1].signal;
+    fetch.mockResolvedValueOnce(narration('ja', '日本語'));
+    elements.language.value = 'ja';
+    elements.language.events.change();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(oldSignal.aborted).toBe(true);
+    finishEnglish(narration('en', 'Old English'));
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['narration-text'].textContent).toBe('日本語');
+    expect(elements['narration-title'].textContent).toContain('日本語');
+    expect(elements['narration-panel'].attributes['aria-busy']).toBe('false');
+  });
+
+  it('rời POI xóa text và bỏ qua narration đang tải của vị trí cũ', async () => {
+    const { elements, fetch } = await arrive();
+    let finishOld;
+    fetch.mockReturnValueOnce(new Promise((resolve) => { finishOld = resolve; }));
+    elements.language.value = 'en';
+    elements.language.events.change();
+    fetch.mockResolvedValueOnce(jsonResponse(outside));
+    submit(elements, '20', '106');
+    await jest.advanceTimersByTimeAsync(0);
+    finishOld(narration('en', 'Old location'));
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['narration-text'].hidden).toBe(true);
+    expect(elements['narration-text'].textContent).toBe('');
+    expect(elements['geofence-panel'].dataset.state).toBe('outside');
+    elements.language.value = 'ko';
+    elements.language.events.change();
+    expect(fetch).toHaveBeenCalledTimes(5);
+  });
+
+  it('dừng GPS hủy narration đang tải và không tiếp tục tải khi đổi language', async () => {
+    const { elements, fetch, geolocation } = await setup();
+    fetch.mockResolvedValueOnce(jsonResponse(inside));
+    let finish;
+    fetch.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    elements['start-gps'].events.click();
+    geolocation.watchPosition.mock.calls[0][0]({ coords: { latitude: 10, longitude: 106, accuracy: 10 } });
+    await jest.advanceTimersByTimeAsync(0);
+    const signal = fetch.mock.calls.at(-1)[1].signal;
+    elements['stop-gps'].events.click();
+    finish(narration('vi', 'Late text'));
+    await jest.advanceTimersByTimeAsync(0);
+    expect(signal.aborted).toBe(true);
+    expect(elements['narration-text'].hidden).toBe(true);
+    elements.language.value = 'en';
+    elements.language.events.change();
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('kết nối lỗi có thể thử lại; text từ API dùng textContent', async () => {
+    const { elements, fetch } = await arrive();
+    fetch.mockRejectedValueOnce(new TypeError('Network failed'));
+    elements.language.value = 'en';
+    elements.language.events.change();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['narration-status'].textContent).toContain('Không kết nối được Backend');
+    expect(elements['narration-panel'].attributes['aria-busy']).toBe('false');
+    const text = '<img src=x onerror=alert(1)>\nText';
+    fetch.mockResolvedValueOnce(narration('en', text));
+    elements['retry-narration'].events.click();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['narration-text'].textContent).toBe(text);
+    expect(elements['narration-text'].innerHTML).toBeUndefined();
+  });
+
+  it.each([
+    { poiId: 'wrong', language: 'en', text: 'Text' },
+    { poiId: 'food-1', language: 'vi', text: 'Wrong language' },
+    { poiId: 'food-1', language: 'en', text: ' ' },
+  ])('không hiển thị response sai POI/language/text: %j', async (response) => {
+    const { elements, fetch } = await arrive();
+    fetch.mockResolvedValueOnce(jsonResponse(response));
+    elements.language.value = 'en';
+    elements.language.events.change();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['narration-text'].hidden).toBe(true);
+    expect(elements['narration-status'].textContent).toContain('không hợp lệ');
   });
 });

@@ -4,7 +4,7 @@
   const byId = (id) => document.getElementById(id);
   const GPS_INTERVAL_MS = 3000;
   const REQUEST_TIMEOUT_MS = 10000;
-  const languageNames = { vi: 'Tiếng Việt', en: 'English', ja: '日本語', ko: '한국어' };
+  const { sourceLanguage, names: languageNames } = window.POI_LANGUAGES;
   let watchId = null;
   let gpsActive = false;
   let gpsSession = 0;
@@ -15,6 +15,10 @@
   let currentLocation = null;
   let nearbyController = null;
   let nearbyRequest = 0;
+  let currentPoi = null;
+  let narrationController = null;
+  let narrationRequest = 0;
+  let narrationKey = null;
 
   function setMessage(id, text, tone = 'neutral') {
     const element = byId(id);
@@ -23,6 +27,7 @@
   }
 
   function setResult(state, title, message) {
+    if (state !== 'loading') clearNarration();
     const labels = { idle: 'Chờ vị trí', loading: 'Đang kiểm tra', outside: 'Ngoài phạm vi', error: 'Chưa thể kiểm tra' };
     const panel = byId('geofence-panel');
     panel.dataset.state = state;
@@ -38,7 +43,10 @@
   function displayLocation(location, source) {
     const changed = !currentLocation || currentLocation.latitude !== location.latitude
       || currentLocation.longitude !== location.longitude || currentLocation.source !== source;
-    if (changed) locationRevision++;
+    if (changed) {
+      locationRevision++;
+      clearNarration();
+    }
     currentLocation = { ...location, source };
     byId('current-lat').textContent = location.latitude.toFixed(6);
     byId('current-lng').textContent = location.longitude.toFixed(6);
@@ -58,7 +66,11 @@
       } catch {
         throw new Error('Phản hồi không hợp lệ. Hãy kiểm tra server và thử lại.');
       }
-      if (!response.ok) throw new Error(data.error || `Yêu cầu thất bại (HTTP ${response.status}).`);
+      if (!response.ok) {
+        const error = new Error(data.error || `Yêu cầu thất bại (HTTP ${response.status}).`);
+        error.statusCode = response.status;
+        throw error;
+      }
       return data;
     } catch (error) {
       if (error.name === 'AbortError') throw new Error('Yêu cầu quá thời gian chờ. Hãy thử lại.');
@@ -74,6 +86,65 @@
     if (nearbyController) nearbyController.abort();
     nearbyController = null;
     byId('check-simulation').disabled = false;
+  }
+
+  function cancelNarration() {
+    narrationRequest++;
+    if (narrationController) narrationController.abort();
+    narrationController = null;
+  }
+
+  function clearNarration() {
+    cancelNarration();
+    currentPoi = null;
+    narrationKey = null;
+    byId('narration-text').textContent = '';
+    byId('narration-text').hidden = true;
+    byId('retry-narration').hidden = true;
+    byId('narration-panel').setAttribute('aria-busy', 'false');
+    setMessage('narration-status', 'Đến một địa điểm để xem nội dung thuyết minh.');
+  }
+
+  async function loadNarration(poi, force = false) {
+    const language = byId('language').value;
+    const key = `${poi.id}:${language}:${poi.updatedAt || ''}`;
+    currentPoi = poi;
+    if (key === narrationKey && !force) return;
+    cancelNarration();
+    narrationKey = key;
+    const requestId = narrationRequest;
+    const controller = new AbortController();
+    narrationController = controller;
+    byId('narration-title').textContent = `Thuyết minh – ${languageNames[language]}`;
+    byId('narration-panel').setAttribute('aria-busy', 'true');
+    byId('narration-text').textContent = '';
+    byId('narration-text').hidden = true;
+    byId('retry-narration').hidden = true;
+    setMessage('narration-status', 'Đang tải nội dung thuyết minh…');
+
+    try {
+      const data = await fetchJson(`/api/pois/${encodeURIComponent(poi.id)}/narrations/${encodeURIComponent(language)}`, controller);
+      if (requestId !== narrationRequest) return;
+      if (data.poiId !== poi.id || data.language !== language || typeof data.text !== 'string' || !data.text.trim()) {
+        throw new Error('Nội dung thuyết minh trả về không hợp lệ.');
+      }
+      byId('narration-text').textContent = data.text;
+      byId('narration-text').setAttribute('lang', language);
+      byId('narration-text').hidden = false;
+      setMessage('narration-status', `Nội dung của ${poi.name}`);
+    } catch (error) {
+      if (requestId !== narrationRequest) return;
+      const missing = error.statusCode === 404;
+      setMessage('narration-status', missing
+        ? 'Chưa có nội dung thuyết minh cho ngôn ngữ này.' : error.message,
+      missing ? 'neutral' : 'error');
+      byId('retry-narration').hidden = false;
+    } finally {
+      if (requestId === narrationRequest) {
+        narrationController = null;
+        byId('narration-panel').setAttribute('aria-busy', 'false');
+      }
+    }
   }
 
   function renderNearby(data, source) {
@@ -100,6 +171,7 @@
       byId('matched-count').textContent = data.pois.length > 1
         ? `${data.pois.length} địa điểm trong phạm vi · Đang hiển thị địa điểm gần nhất.`
         : 'Địa điểm gần nhất trong phạm vi của bạn.';
+      loadNarration(poi);
     }
     byId('result-source').textContent = `Kết quả từ ${source.toLowerCase()}`;
     byId('result-time').textContent = `Cập nhật ${new Date().toLocaleTimeString('vi-VN')}`;
@@ -208,6 +280,7 @@
       return;
     }
     cancelNearby();
+    clearNarration();
     gpsActive = true;
     const session = ++gpsSession;
     lastGpsRequest = -Infinity;
@@ -326,10 +399,19 @@
 
   function updateLanguage() {
     const language = byId('language').value;
-    byId('language-note').textContent = `Đang chọn: ${languageNames[language]} · Chỉ lưu lựa chọn ngôn ngữ.`;
+    byId('language-note').textContent = `Đang chọn: ${languageNames[language]} · Nội dung thuyết minh dạng text.`;
+    byId('narration-title').textContent = `Thuyết minh – ${languageNames[language]}`;
     try { localStorage.setItem('poi-demo-language', language); } catch { /* Vẫn dùng được khi storage bị chặn. */ }
+    if (currentPoi) loadNarration(currentPoi);
   }
 
+  byId('language').replaceChildren(...Object.entries(languageNames).map(([code, name]) => {
+    const option = document.createElement('option');
+    option.value = code;
+    option.textContent = name;
+    return option;
+  }));
+  byId('language').value = sourceLanguage;
   try {
     const savedLanguage = localStorage.getItem('poi-demo-language');
     if (Object.prototype.hasOwnProperty.call(languageNames, savedLanguage)) byId('language').value = savedLanguage;
@@ -340,6 +422,7 @@
   byId('stop-gps').addEventListener('click', stopGps);
   byId('simulation-form').addEventListener('submit', simulatePosition);
   byId('reload-pois').addEventListener('click', loadPois);
-  window.addEventListener('pagehide', () => { stopTracking(); cancelNearby(); });
+  byId('retry-narration').addEventListener('click', () => { if (currentPoi) loadNarration(currentPoi, true); });
+  window.addEventListener('pagehide', () => { stopTracking(); cancelNearby(); clearNarration(); });
   loadPois();
 })();

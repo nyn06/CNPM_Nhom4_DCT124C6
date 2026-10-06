@@ -1,6 +1,8 @@
 const { v4: uuidv4 } = require('uuid');
 const poiRepository = require('../repositories/poi.repository');
 const { calculateDistanceInMeters } = require('../utils/geo');
+const translationProvider = require('../integrations/translation/translation.provider');
+const { sourceLanguage, names: narrationLanguages } = require('../../public/js/poi-languages');
 
 class PoiService {
   createPoi(data) {
@@ -79,6 +81,98 @@ class PoiService {
   deletePoi(id) {
     this.getPoi(id);
     return poiRepository.delete(id);
+  }
+
+  setVietnameseNarration(id, data) {
+    const poi = this.getPoi(id);
+    if (!data || typeof data.text !== 'string' || !data.text.trim()) {
+      const error = new Error('text là bắt buộc và phải là chuỗi không rỗng');
+      error.statusCode = 400;
+      throw error;
+    }
+    const text = data.text.trim();
+    // Nguồn thay đổi thì bỏ bản dịch cũ. Gửi lại cùng text giữ các bản dịch hiện có.
+    const existing = poi.narrations || {};
+    const narrations = existing[sourceLanguage]?.text === text ? { ...existing } : {};
+    narrations[sourceLanguage] = existing[sourceLanguage]?.text === text ? existing[sourceLanguage] : { text };
+    const updatedAt = new Date().toISOString();
+    poiRepository.update(id, { narrations, updatedAt });
+    return { poiId: id, language: sourceLanguage, text, updatedAt };
+  }
+
+  getPoiNarration(id, language) {
+    const poi = this.getPoi(id);
+    if (!Object.prototype.hasOwnProperty.call(narrationLanguages, language)) {
+      const error = new Error('Ngôn ngữ thuyết minh không được hỗ trợ');
+      error.statusCode = 400;
+      throw error;
+    }
+    const narration = poi.narrations?.[language];
+    if (!narration) {
+      const error = new Error('Chưa có nội dung thuyết minh cho ngôn ngữ này');
+      error.statusCode = 404;
+      throw error;
+    }
+    return { poiId: id, language, text: narration.text };
+  }
+
+  getPoiNarrations(id) {
+    const poi = this.getPoi(id);
+    return { poiId: id, narrations: poi.narrations || {} };
+  }
+
+  async createTranslations(id, data) {
+    const poi = this.getPoi(id);
+    const targets = data?.targetLanguages;
+    if (!Array.isArray(targets) || targets.length === 0 || new Set(targets).size !== targets.length
+      || targets.some((language) => typeof language !== 'string' || language === sourceLanguage
+        || !Object.prototype.hasOwnProperty.call(narrationLanguages, language))) {
+      const error = new Error('targetLanguages phải là mảng không rỗng, không trùng lặp, chỉ chứa en, ja, ko');
+      error.statusCode = 400;
+      throw error;
+    }
+    const source = poi.narrations?.[sourceLanguage];
+    if (!source?.text) {
+      const error = new Error('Cần lưu nội dung thuyết minh tiếng Việt trước khi dịch');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    let entries;
+    try {
+      entries = await Promise.all(targets.map(async (language) => {
+        const result = await translationProvider.translate(source.text, sourceLanguage, language);
+        if (!result || typeof result.text !== 'string' || !result.text.trim()) {
+          throw new Error('Invalid translation');
+        }
+        return [language, { text: result.text.trim() }];
+      }));
+    } catch (providerFailure) {
+      // Chỉ trả thông báo do ứng dụng kiểm soát, không expose lỗi gốc có thể chứa secret.
+      const messages = {
+        502: 'Dịch vụ dịch gặp lỗi hoặc trả nội dung không hợp lệ. Chưa lưu bản dịch nào của yêu cầu này.',
+        503: 'Dịch vụ dịch chưa được cấu hình hợp lệ hoặc bị từ chối xác thực. Kiểm tra TRANSLATION_PROVIDER, TRANSLATION_API_URL và API key.',
+        504: 'Dịch vụ dịch quá thời gian chờ. Chưa lưu bản dịch nào của yêu cầu này.',
+      };
+      const statusCode = [503, 504].includes(providerFailure?.statusCode) ? providerFailure.statusCode : 502;
+      const error = new Error(messages[statusCode]);
+      error.statusCode = statusCode;
+      throw error;
+    }
+
+    // Re-read sau await: không khôi phục POI đã xóa, không lưu bản dịch từ nguồn đã đổi.
+    const current = this.getPoi(id);
+    if (current.narrations?.[sourceLanguage] !== source) {
+      const error = new Error('Nội dung tiếng Việt đã thay đổi trong khi dịch. Hãy gửi lại yêu cầu.');
+      error.statusCode = 409;
+      throw error;
+    }
+    const translations = Object.fromEntries(entries);
+    poiRepository.update(id, {
+      narrations: { ...current.narrations, ...translations },
+      updatedAt: new Date().toISOString(),
+    });
+    return { poiId: id, sourceLanguage, translations };
   }
 
   _parseCoordinate(value, field, min, max) {
