@@ -2,11 +2,12 @@ const { v4: uuidv4 } = require('uuid');
 const narrationRepository = require('../repositories/narration.repository');
 const piperTtsProvider = require('../integrations/tts/piperTts.provider');
 
-const SUPPORTED_LANGUAGES = ['vi', 'en'];
+const { names: languageNames } = require('../../public/js/poi-languages');
+const SUPPORTED_LANGUAGES = Object.keys(languageNames);
 
 class NarrationService {
   async createNarration({ text, language }) {
-    if (!text || !text.trim()) {
+    if (typeof text !== 'string' || !text.trim()) {
       const error = new Error('text là bắt buộc');
       error.statusCode = 400;
       throw error;
@@ -41,11 +42,13 @@ class NarrationService {
         status: 'done',
         audioFile,
       });
-    } catch (error) {
+    } catch {
       narrationRepository.update(narration.id, {
         status: 'failed',
       });
 
+      const error = new Error('Không tạo được audio thuyết minh. Kiểm tra cấu hình Piper và thử lại.');
+      error.statusCode = 500;
       throw error;
     }
   }

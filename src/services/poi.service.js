@@ -2,6 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const poiRepository = require('../repositories/poi.repository');
 const { calculateDistanceInMeters } = require('../utils/geo');
 const translationProvider = require('../integrations/translation/translation.provider');
+const piperTtsProvider = require('../integrations/tts/piperTts.provider');
 const { sourceLanguage, names: narrationLanguages } = require('../../public/js/poi-languages');
 
 class PoiService {
@@ -113,7 +114,13 @@ class PoiService {
       error.statusCode = 404;
       throw error;
     }
-    return { poiId: id, language, text: narration.text };
+    return {
+      poiId: id, language, text: narration.text,
+      ...(narration.audioFile ? {
+        audioFile: narration.audioFile,
+        audioUrl: `/audio/${narration.audioFile}`,
+      } : {}),
+    };
   }
 
   getPoiNarrations(id) {
@@ -162,17 +169,58 @@ class PoiService {
 
     // Re-read sau await: không khôi phục POI đã xóa, không lưu bản dịch từ nguồn đã đổi.
     const current = this.getPoi(id);
-    if (current.narrations?.[sourceLanguage] !== source) {
+    // Metadata audio có thể đổi trong lúc dịch, chỉ thay đổi text mới làm nguồn mất hiệu lực.
+    if (current.narrations?.[sourceLanguage]?.text !== source.text) {
       const error = new Error('Nội dung tiếng Việt đã thay đổi trong khi dịch. Hãy gửi lại yêu cầu.');
       error.statusCode = 409;
       throw error;
     }
-    const translations = Object.fromEntries(entries);
+    const translations = Object.fromEntries(entries.map(([language, narration]) => {
+      const previous = current.narrations?.[language];
+      // Giữ audio chỉ khi bản dịch mới giống hệt text đã tạo audio.
+      return [language, previous?.text === narration.text ? { ...previous } : narration];
+    }));
     poiRepository.update(id, {
       narrations: { ...current.narrations, ...translations },
       updatedAt: new Date().toISOString(),
     });
     return { poiId: id, sourceLanguage, translations };
+  }
+
+  async createPoiAudio(id, language) {
+    const source = this.getPoiNarration(id, language);
+    if (typeof source.text !== 'string' || !source.text.trim()) {
+      const error = new Error('Nội dung thuyết minh phải là chuỗi không rỗng trước khi tạo audio');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    let audioFile;
+    try {
+      audioFile = await piperTtsProvider.synthesize(source.text, language);
+      // Provider chỉ được trả tên WAV, không nhận path hoặc URL từ implementation bên ngoài.
+      if (typeof audioFile !== 'string' || !/^[a-zA-Z0-9_-]+\.wav$/.test(audioFile)) {
+        throw new Error('Invalid audio filename');
+      }
+    } catch {
+      const error = new Error('Không tạo được audio thuyết minh. Kiểm tra cấu hình Piper và thử lại.');
+      error.statusCode = 500;
+      throw error;
+    }
+
+    const current = this.getPoi(id);
+    const narration = current.narrations?.[language];
+    if (narration?.text !== source.text) {
+      const error = new Error('Nội dung thuyết minh đã thay đổi trong khi tạo audio. Hãy gửi lại yêu cầu.');
+      error.statusCode = 409;
+      throw error;
+    }
+    const updatedAt = new Date().toISOString();
+    poiRepository.update(id, {
+      narrations: { ...current.narrations, [language]: { ...narration, audioFile } },
+      updatedAt,
+    });
+    return { poiId: id, language, text: narration.text, audioFile, audioUrl: `/audio/${audioFile}`, updatedAt };
   }
 
   _parseCoordinate(value, field, min, max) {

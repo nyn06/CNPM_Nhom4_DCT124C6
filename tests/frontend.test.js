@@ -14,8 +14,11 @@ function createElement() {
     value: '', textContent: '', disabled: false, hidden: false,
     dataset: {}, attributes: {}, events: {},
     setAttribute(name, value) { this.attributes[name] = value; },
+    getAttribute(name) { return this.attributes[name] || null; },
+    removeAttribute(name) { delete this.attributes[name]; },
     addEventListener(name, listener) { this.events[name] = listener; },
     replaceChildren: jest.fn(), focus: jest.fn(), scrollIntoView: jest.fn(),
+    play: jest.fn(), pause: jest.fn(), load: jest.fn(),
   };
 }
 
@@ -192,6 +195,162 @@ describe('Frontend: GPS và request', () => {
 
     expect(elements['result-message'].textContent).toContain('quá thời gian chờ');
     expect(elements['check-simulation'].disabled).toBe(false);
+  });
+});
+
+describe('Frontend Stage 5: nghe audio thủ công', () => {
+  const poi = { id: 'audio-poi', name: 'Phở Việt Nam', distance: 0, geofenceRadius: 50, updatedAt: 'v1' };
+  const inside = { insideGeofence: true, nearestPoi: poi, pois: [poi] };
+  const content = (language, audioUrl) => jsonResponse({ poiId: poi.id, language, text: `Text ${language}`, ...(audioUrl ? { audioUrl } : {}) });
+  const choose = (elements, language) => {
+    elements.language.value = language;
+    elements.language.events.change();
+  };
+  async function arrive(audioUrl) {
+    const ui = await setup();
+    ui.fetch.mockResolvedValueOnce(jsonResponse(inside));
+    ui.fetch.mockResolvedValueOnce(content('vi', audioUrl));
+    submit(ui.elements, '10', '106');
+    await jest.advanceTimersByTimeAsync(0);
+    return ui;
+  }
+
+  it('controls có preload none, không autoplay; đến POI có audio không tự play hoặc POST TTS', async () => {
+    expect(html).toMatch(/<audio[^>]*controls[^>]*preload="none"/);
+    expect(html).not.toMatch(/<audio[^>]*autoplay/);
+    const { elements, fetch } = await arrive('/audio/narration_vi.wav');
+    expect(elements['narration-audio'].hidden).toBe(false);
+    expect(elements['narration-audio'].attributes.src).toBe('/audio/narration_vi.wav');
+    expect(elements['narration-audio'].play).not.toHaveBeenCalled();
+    expect(elements['audio-status'].textContent).toContain('Bấm Play');
+    expect(fetch.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false);
+  });
+
+  it('đổi language dừng audio cũ và chọn đúng URL của language mới', async () => {
+    const { elements, fetch } = await arrive('/audio/narration_vi.wav');
+    const pauseCount = elements['narration-audio'].pause.mock.calls.length;
+    fetch.mockResolvedValueOnce(content('ja', '/audio/narration_ja.wav'));
+    choose(elements, 'ja');
+    expect(elements['narration-audio'].hidden).toBe(true);
+    expect(elements['narration-audio'].getAttribute('src')).toBeNull();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['narration-audio'].attributes.src).toBe('/audio/narration_ja.wav');
+    expect(elements['audio-title'].textContent).toContain('日本語');
+    expect(elements['narration-audio'].pause.mock.calls.length).toBeGreaterThan(pauseCount);
+    expect(elements['narration-audio'].play).not.toHaveBeenCalled();
+    expect(fetch.mock.calls.filter(([url]) => url.includes('/nearby'))).toHaveLength(1);
+  });
+
+  it('chưa có audio giữ text, có nút tạo và không giữ src của language cũ', async () => {
+    const { elements, fetch } = await arrive('/audio/narration_vi.wav');
+    fetch.mockResolvedValueOnce(content('ko'));
+    choose(elements, 'ko');
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['narration-text'].textContent).toBe('Text ko');
+    expect(elements['narration-audio'].hidden).toBe(true);
+    expect(elements['narration-audio'].getAttribute('src')).toBeNull();
+    expect(elements['generate-audio'].hidden).toBe(false);
+    expect(elements['audio-status'].textContent).toContain('Chưa có audio');
+  });
+
+  it('thiếu narration không cho tạo audio', async () => {
+    const { elements, fetch } = await arrive();
+    fetch.mockResolvedValueOnce({ ok: false, status: 404, json: async () => ({ error: 'Missing' }) });
+    choose(elements, 'en');
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['generate-audio'].hidden).toBe(true);
+    expect(elements['narration-audio'].hidden).toBe(true);
+    expect(elements['audio-status'].textContent).toContain('Chưa có nội dung');
+  });
+
+  it.each(['https://evil.test/file.wav', '//evil.test/file.wav', '/audio/../outside.wav', '/audio/file.wav?secret=key', '/audio/nested/file.wav'])(
+    'từ chối URL ngoài/path traversal %s', async (audioUrl) => {
+      const { elements } = await arrive(audioUrl);
+      expect(elements['narration-audio'].hidden).toBe(true);
+      expect(elements['narration-audio'].getAttribute('src')).toBeNull();
+      expect(elements['audio-status'].textContent).toContain('không hợp lệ');
+      expect(elements['narration-text'].textContent).toBe('Text vi');
+    }
+  );
+
+  it('chỉ bấm tạo mới POST một lần, khóa nút, refresh GET và không auto-play', async () => {
+    const { elements, fetch } = await arrive();
+    let finish;
+    fetch.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    elements['generate-audio'].events.click();
+    elements['generate-audio'].events.click();
+    expect(elements['generate-audio'].disabled).toBe(true);
+    expect(elements['audio-panel'].attributes['aria-busy']).toBe('true');
+    expect(fetch.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(1);
+    expect(fetch.mock.calls.at(-1)[0]).toBe('/api/pois/audio-poi/narrations/vi/audio');
+    fetch.mockResolvedValueOnce(content('vi', '/audio/narration_new.wav'));
+    finish(jsonResponse({ audioUrl: '/audio/narration_new.wav' }));
+    await jest.advanceTimersByTimeAsync(0);
+    expect(fetch.mock.calls.at(-1)[0]).toBe('/api/pois/audio-poi/narrations/vi');
+    expect(elements['narration-audio'].attributes.src).toBe('/audio/narration_new.wav');
+    expect(elements['narration-audio'].play).not.toHaveBeenCalled();
+    expect(elements['generate-audio'].disabled).toBe(false);
+    expect(elements['audio-panel'].attributes['aria-busy']).toBe('false');
+  });
+
+  it('Piper failure ở Backend hiển thị lỗi, giữ text và mở lại nút', async () => {
+    const { elements, fetch } = await arrive();
+    fetch.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ error: 'Không tạo được audio' }) });
+    elements['generate-audio'].events.click();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['audio-status'].textContent).toBe('Không tạo được audio');
+    expect(elements['narration-text'].textContent).toBe('Text vi');
+    expect(elements['generate-audio'].disabled).toBe(false);
+    expect(elements['narration-audio'].play).not.toHaveBeenCalled();
+  });
+
+  it('đổi language trong khi tạo audio bỏ qua kết quả cũ', async () => {
+    const { elements, fetch } = await arrive();
+    let finish;
+    fetch.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    elements['generate-audio'].events.click();
+    const signal = fetch.mock.calls.at(-1)[1].signal;
+    fetch.mockResolvedValueOnce(content('en', '/audio/narration_en.wav'));
+    choose(elements, 'en');
+    await jest.advanceTimersByTimeAsync(0);
+    finish(jsonResponse({ audioUrl: '/audio/narration_old_vi.wav' }));
+    await jest.advanceTimersByTimeAsync(0);
+    expect(signal.aborted).toBe(true);
+    expect(elements['narration-audio'].attributes.src).toBe('/audio/narration_en.wav');
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('/narrations/vi'))).toHaveLength(1);
+    expect(elements['generate-audio'].disabled).toBe(false);
+  });
+
+  it('rời geofence dừng và gỡ audio hiện có', async () => {
+    const { elements, fetch } = await arrive('/audio/narration_vi.wav');
+    const pauses = elements['narration-audio'].pause.mock.calls.length;
+    fetch.mockResolvedValueOnce(jsonResponse(outside));
+    submit(elements, '20', '106');
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['narration-audio'].hidden).toBe(true);
+    expect(elements['narration-audio'].getAttribute('src')).toBeNull();
+    expect(elements['narration-audio'].pause.mock.calls.length).toBeGreaterThan(pauses);
+    expect(elements['generate-audio'].hidden).toBe(true);
+  });
+
+  it('cùng tọa độ và POI ở callback tiếp theo không tự tạo/khởi động lại audio', async () => {
+    const { elements, fetch } = await arrive('/audio/narration_vi.wav');
+    const pauses = elements['narration-audio'].pause.mock.calls.length;
+    fetch.mockResolvedValueOnce(jsonResponse(inside));
+    submit(elements, '10', '106');
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['narration-audio'].pause.mock.calls.length).toBe(pauses);
+    expect(elements['narration-audio'].play).not.toHaveBeenCalled();
+    expect(fetch.mock.calls.filter(([url]) => url.endsWith('/narrations/vi'))).toHaveLength(1);
+    expect(fetch.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false);
+  });
+
+  it('lỗi tải WAV thông báo rõ, không tự gọi TTS', async () => {
+    const { elements, fetch } = await arrive('/audio/narration_vi.wav');
+    const calls = fetch.mock.calls.length;
+    elements['narration-audio'].events.error();
+    expect(elements['audio-status'].textContent).toContain('Không tải được audio');
+    expect(fetch).toHaveBeenCalledTimes(calls);
   });
 });
 

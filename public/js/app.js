@@ -19,6 +19,10 @@
   let narrationController = null;
   let narrationRequest = 0;
   let narrationKey = null;
+  let currentNarration = null;
+  let audioController = null;
+  let audioRequest = 0;
+  let generatingAudio = false;
 
   function setMessage(id, text, tone = 'neutral') {
     const element = byId(id);
@@ -56,10 +60,10 @@
     return changed;
   }
 
-  async function fetchJson(url, controller) {
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  async function fetchJson(url, controller, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url, { signal: controller.signal, headers: { Accept: 'application/json' } });
+      const response = await fetch(url, { ...options, signal: controller.signal, headers: { Accept: 'application/json' } });
       let data;
       try {
         data = await response.json();
@@ -96,6 +100,7 @@
 
   function clearNarration() {
     cancelNarration();
+    clearAudio();
     currentPoi = null;
     narrationKey = null;
     byId('narration-text').textContent = '';
@@ -105,12 +110,81 @@
     setMessage('narration-status', 'Đến một địa điểm để xem nội dung thuyết minh.');
   }
 
+  function clearAudio() {
+    audioRequest++;
+    if (audioController) audioController.abort();
+    audioController = null;
+    generatingAudio = false;
+    currentNarration = null;
+    const audio = byId('narration-audio');
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+    audio.hidden = true;
+    byId('generate-audio').hidden = true;
+    byId('generate-audio').disabled = false;
+    byId('audio-panel').setAttribute('aria-busy', 'false');
+    setMessage('audio-status', 'Đến một địa điểm để chọn nội dung nghe.');
+  }
+
+  function displayAudio(narration) {
+    currentNarration = narration;
+    byId('generate-audio').hidden = false;
+    const audioUrl = narration.audioUrl;
+    if (!audioUrl) {
+      byId('generate-audio').textContent = 'Tạo audio cho ngôn ngữ này';
+      setMessage('audio-status', 'Chưa có audio cho ngôn ngữ này. Bấm tạo audio để chuẩn bị nội dung nghe.');
+      return;
+    }
+    // Chỉ chấp nhận WAV của Backend cùng origin, không nhận URL ngoài hoặc path traversal.
+    if (typeof audioUrl !== 'string' || !/^\/audio\/[a-zA-Z0-9_-]+\.wav$/.test(audioUrl)) {
+      setMessage('audio-status', 'Đường dẫn audio không hợp lệ.', 'error');
+      return;
+    }
+    const audio = byId('narration-audio');
+    audio.setAttribute('src', audioUrl);
+    audio.hidden = false;
+    byId('generate-audio').textContent = 'Tạo lại audio';
+    setMessage('audio-status', 'Audio đã sẵn sàng. Bấm Play để nghe.');
+    // Stage 5 chỉ nghe bằng controls do người dùng bấm; không gọi audio.play().
+  }
+
+  async function generateAudio() {
+    if (!currentPoi || !currentNarration || generatingAudio) return;
+    const poi = currentPoi;
+    const language = byId('language').value;
+    const requestId = ++audioRequest;
+    const controller = new AbortController();
+    audioController = controller;
+    generatingAudio = true;
+    byId('generate-audio').disabled = true;
+    byId('audio-panel').setAttribute('aria-busy', 'true');
+    setMessage('audio-status', 'Đang tạo audio thuyết minh…');
+    try {
+      await fetchJson(`/api/pois/${encodeURIComponent(poi.id)}/narrations/${encodeURIComponent(language)}/audio`,
+        controller, { method: 'POST' }, 130000);
+      if (requestId !== audioRequest) return;
+      await loadNarration(poi, true);
+    } catch (error) {
+      if (requestId !== audioRequest) return;
+      setMessage('audio-status', error.message, 'error');
+    } finally {
+      if (requestId === audioRequest) {
+        generatingAudio = false;
+        audioController = null;
+        byId('generate-audio').disabled = false;
+        byId('audio-panel').setAttribute('aria-busy', 'false');
+      }
+    }
+  }
+
   async function loadNarration(poi, force = false) {
     const language = byId('language').value;
     const key = `${poi.id}:${language}:${poi.updatedAt || ''}`;
     currentPoi = poi;
     if (key === narrationKey && !force) return;
     cancelNarration();
+    clearAudio();
     narrationKey = key;
     const requestId = narrationRequest;
     const controller = new AbortController();
@@ -121,17 +195,19 @@
     byId('narration-text').hidden = true;
     byId('retry-narration').hidden = true;
     setMessage('narration-status', 'Đang tải nội dung thuyết minh…');
+    setMessage('audio-status', 'Đang kiểm tra audio cho ngôn ngữ đã chọn…');
 
     try {
       const data = await fetchJson(`/api/pois/${encodeURIComponent(poi.id)}/narrations/${encodeURIComponent(language)}`, controller);
       if (requestId !== narrationRequest) return;
-      if (data.poiId !== poi.id || data.language !== language || typeof data.text !== 'string' || !data.text.trim()) {
+      if (!data || data.poiId !== poi.id || data.language !== language || typeof data.text !== 'string' || !data.text.trim()) {
         throw new Error('Nội dung thuyết minh trả về không hợp lệ.');
       }
       byId('narration-text').textContent = data.text;
       byId('narration-text').setAttribute('lang', language);
       byId('narration-text').hidden = false;
       setMessage('narration-status', `Nội dung của ${poi.name}`);
+      displayAudio(data);
     } catch (error) {
       if (requestId !== narrationRequest) return;
       const missing = error.statusCode === 404;
@@ -139,6 +215,9 @@
         ? 'Chưa có nội dung thuyết minh cho ngôn ngữ này.' : error.message,
       missing ? 'neutral' : 'error');
       byId('retry-narration').hidden = false;
+      setMessage('audio-status', missing
+        ? 'Chưa có nội dung thuyết minh cho ngôn ngữ này để tạo audio.' : 'Chưa tải được nội dung để nghe.',
+      missing ? 'neutral' : 'error');
     } finally {
       if (requestId === narrationRequest) {
         narrationController = null;
@@ -399,7 +478,8 @@
 
   function updateLanguage() {
     const language = byId('language').value;
-    byId('language-note').textContent = `Đang chọn: ${languageNames[language]} · Nội dung thuyết minh dạng text.`;
+    byId('language-note').textContent = `Đang chọn: ${languageNames[language]} · Text và audio nghe thủ công.`;
+    byId('audio-title').textContent = `Audio thuyết minh – ${languageNames[language]}`;
     byId('narration-title').textContent = `Thuyết minh – ${languageNames[language]}`;
     try { localStorage.setItem('poi-demo-language', language); } catch { /* Vẫn dùng được khi storage bị chặn. */ }
     if (currentPoi) loadNarration(currentPoi);
@@ -423,6 +503,12 @@
   byId('simulation-form').addEventListener('submit', simulatePosition);
   byId('reload-pois').addEventListener('click', loadPois);
   byId('retry-narration').addEventListener('click', () => { if (currentPoi) loadNarration(currentPoi, true); });
+  byId('generate-audio').addEventListener('click', generateAudio);
+  byId('narration-audio').addEventListener('error', () => {
+    if (byId('narration-audio').getAttribute('src')) {
+      setMessage('audio-status', 'Không tải được audio. Hãy thử tải lại nội dung hoặc tạo lại audio.', 'error');
+    }
+  });
   window.addEventListener('pagehide', () => { stopTracking(); cancelNearby(); clearNarration(); });
   loadPois();
 })();

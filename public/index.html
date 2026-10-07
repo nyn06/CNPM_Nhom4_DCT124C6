@@ -104,10 +104,15 @@
           <button id="retry-narration" type="button" class="button secondary" hidden>Thử tải lại nội dung</button>
         </section>
 
-        <section class="audio-panel" aria-labelledby="audio-title">
+        <section id="audio-panel" class="audio-panel" aria-labelledby="audio-title" aria-busy="false">
           <span class="audio-icon"><svg class="icon"><use href="#icon-audio"/></svg></span>
-          <div><div class="subheading"><h2 id="audio-title">Audio thuyết minh</h2><span class="tag">SẮP CÓ</span></div><p>Audio đa ngôn ngữ sẽ được bổ sung ở giai đoạn tiếp theo.</p><span id="language-note" class="helper">Ngôn ngữ áp dụng cho nội dung thuyết minh dạng text.</span></div>
-          <button type="button" class="audio-play" disabled aria-label="Phát thuyết minh — chưa có audio">▶</button>
+          <div class="audio-content">
+            <div class="subheading"><h2 id="audio-title">Audio thuyết minh</h2><span class="tag">NGHE THỦ CÔNG</span></div>
+            <p id="audio-status" role="status">Đến một địa điểm để chọn nội dung nghe.</p>
+            <audio id="narration-audio" controls preload="none" aria-label="Nghe thuyết minh" hidden></audio>
+            <button id="generate-audio" type="button" class="button secondary" hidden>Tạo audio cho ngôn ngữ này</button>
+            <span id="language-note" class="helper">Chọn ngôn ngữ rồi bấm Play để nghe khi có audio.</span>
+          </div>
         </section>
       </div>
     </div>

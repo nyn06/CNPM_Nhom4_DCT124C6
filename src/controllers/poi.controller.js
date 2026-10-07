@@ -65,6 +65,15 @@ class PoiController {
     }
   }
 
+  async createPoiAudio(req, res, next) {
+    try {
+      const result = await poiService.createPoiAudio(req.params.id, req.params.language);
+      res.status(200).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   getPoi(req, res, next) {
     try {
       const poi = poiService.getPoi(req.params.id);

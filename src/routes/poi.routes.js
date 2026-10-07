@@ -10,6 +10,7 @@ router.get('/pois/nearby', poiController.getNearbyPois);
 router.put('/pois/:id/narrations/vi', poiController.setVietnameseNarration);
 router.get('/pois/:id/narrations', poiController.getPoiNarrations);
 router.get('/pois/:id/narrations/:language', poiController.getPoiNarration);
+router.post('/pois/:id/narrations/:language/audio', poiController.createPoiAudio);
 router.post('/pois/:id/translations', poiController.createTranslations);
 router.get('/pois/:id', poiController.getPoi);
 router.put('/pois/:id', poiController.updatePoi);
