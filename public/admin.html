@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f5f0">
+  <title>Quản lý điểm thuyết minh — Vị Giác</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/admin.css">
+  <script src="/js/poi-languages.js" defer></script>
+  <script src="/js/admin.js" defer></script>
+</head>
+<body class="admin-page">
+  <a class="skip-link" href="#admin-main">Đến nội dung quản lý</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="/admin.html">Vị Giác<span class="tag">QUẢN LÝ</span></a>
+      <a class="button secondary" href="/">Mở WebApp khách →</a>
+    </div>
+  </header>
+  <main id="admin-main" class="page admin-main">
+    <div class="admin-heading">
+      <div><p class="eyebrow">ĐIỂM ĐẾN &amp; NỘI DUNG</p><h1>Quản lý điểm thuyết minh</h1><p class="helper">Tạo địa điểm, chuẩn bị nội dung và audio cho hành trình của khách.</p></div>
+      <button id="new-poi" type="button" class="button primary">+ Thêm POI</button>
+    </div>
+    <noscript><p class="notice" data-tone="error">Hãy bật JavaScript để sử dụng trang quản lý.</p></noscript>
+    <p id="action-status" class="admin-message" role="status" aria-live="polite">Chọn một địa điểm hoặc thêm POI mới để bắt đầu.</p>
+    <div class="admin-workspace">
+      <section class="panel admin-list" aria-labelledby="list-title">
+        <div class="admin-section-heading"><h2 id="list-title">Danh sách POI</h2><button id="reload-pois" type="button" class="button secondary">Tải lại</button></div>
+        <p id="poi-count" class="helper"></p>
+        <p id="list-status" class="helper" role="status"></p>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <caption class="sr-only">Các địa điểm hiện có trên hệ thống</caption>
+            <thead><tr><th scope="col">Địa điểm</th><th scope="col">Trạng thái</th><th scope="col">Thao tác</th></tr></thead>
+            <tbody id="poi-rows" aria-busy="false"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="admin-editor">
+        <p id="selection-status" class="notice" role="status">Chọn “Quản lý” trong danh sách để mở địa điểm.</p>
+        <section id="poi-panel" class="panel admin-panel" hidden aria-labelledby="poi-form-title" aria-busy="false">
+          <div class="admin-section-heading"><div><p class="eyebrow">01 · ĐỊA ĐIỂM</p><h2 id="poi-form-title">Thông tin POI</h2></div><button id="cancel-edit" type="button" class="button secondary">Đóng</button></div>
+          <p id="selected-id" class="helper"></p>
+          <form id="poi-form" novalidate>
+            <fieldset id="poi-fields" class="admin-fields">
+              <div class="admin-form-grid">
+                <div class="wide"><label for="poi-name">Tên địa điểm *</label><input id="poi-name" name="name" type="text" required aria-describedby="action-status"></div>
+                <div class="wide"><label for="poi-description">Mô tả địa điểm *</label><textarea id="poi-description" name="description" rows="3" required aria-describedby="action-status"></textarea></div>
+                <div><label for="poi-category">Loại *</label><input id="poi-category" name="category" type="text" placeholder="food, cafe, …" required aria-describedby="action-status"></div>
+                <div><label for="poi-address">Địa chỉ</label><input id="poi-address" name="address" type="text"></div>
+                <div><label for="poi-latitude">Latitude *</label><input id="poi-latitude" name="latitude" type="text" inputmode="decimal" placeholder="-90 đến 90" required aria-describedby="action-status"></div>
+                <div><label for="poi-longitude">Longitude *</label><input id="poi-longitude" name="longitude" type="text" inputmode="decimal" placeholder="-180 đến 180" required aria-describedby="action-status"></div>
+                <div><label for="poi-radius">Bán kính geofence (m) *</label><input id="poi-radius" name="geofenceRadius" type="text" inputmode="decimal" required aria-describedby="action-status"></div>
+                <label class="admin-checkbox" for="poi-active"><input id="poi-active" name="isActive" type="checkbox">Địa điểm đang hoạt động</label>
+              </div>
+            </fieldset>
+            <div class="admin-actions"><button id="save-poi" type="submit" class="button primary">Lưu thay đổi</button><button id="delete-selected" type="button" class="button danger" hidden>Xóa POI</button></div>
+          </form>
+        </section>
+
+        <section id="content-panel" class="panel admin-panel" hidden aria-labelledby="content-title" aria-busy="false">
+          <div class="admin-section-heading"><div><p class="eyebrow">02 · THUYẾT MINH &amp; AUDIO</p><h2 id="content-title">Nội dung đa ngôn ngữ</h2></div><button id="reload-content" type="button" class="button secondary">Tải lại nội dung</button></div>
+          <p id="content-status" class="helper" role="status"></p>
+          <form id="vi-form" novalidate>
+            <label for="vi-text">Nội dung gốc tiếng Việt</label>
+            <textarea id="vi-text" name="text" rows="5" lang="vi" placeholder="Nhập câu chuyện thuyết minh cho địa điểm…" aria-describedby="vi-help" required></textarea>
+            <p id="vi-help" class="helper">Lưu tiếng Việt trước khi dịch hoặc tạo audio. Nội dung thay đổi sẽ được backend kiểm tra lại để bỏ bản dịch/audio cũ.</p>
+            <div class="admin-actions"><button id="save-vi" type="submit" class="button primary">Lưu tiếng Việt</button><button id="translate" type="button" class="button secondary">Dịch VI → EN/JA/KO</button></div>
+          </form>
+          <p id="draft-status" class="helper" role="status"></p>
+          <div id="language-cards" class="admin-language-grid"></div>
+          <div class="admin-preview">
+            <p id="preview-status" class="helper" role="status">Chọn “Nghe” ở một ngôn ngữ để nghe thử.</p>
+            <audio id="preview-audio" controls preload="none" aria-label="Nghe thử audio thuyết minh" hidden></audio>
+          </div>
+        </section>
+      </div>
+    </div>
+    <footer class="site-footer"><span>Vị Giác · Chuẩn bị mỗi điểm đến, kể mỗi câu chuyện.</span><span>Bản demo · Dữ liệu POI được giữ trong bộ nhớ khi server chạy.</span></footer>
+  </main>
+  <template id="poi-row-template">
+    <tr><td><strong class="row-name"></strong><span class="row-category helper"></span></td><td><span class="row-active badge"></span></td><td><div class="row-actions"><button class="row-manage button secondary" type="button">Quản lý</button><button class="row-delete button danger" type="button">Xóa</button></div></td></tr>
+  </template>
+  <template id="language-template">
+    <article class="admin-language-card">
+      <h3 class="language-name"></h3><p class="text-status helper"></p><div class="language-text" hidden></div><p class="audio-status helper" role="status"></p>
+      <div class="admin-actions"><button class="generate-audio button secondary" type="button">Tạo audio</button><button class="listen-audio button dark" type="button" hidden>▶ Nghe</button></div>
+    </article>
+  </template>
+</body>
+</html>
