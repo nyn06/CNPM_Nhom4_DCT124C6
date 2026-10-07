@@ -62,6 +62,13 @@
         </div>
         <p id="gps-message" class="helper" role="status">Chỉ yêu cầu quyền vị trí khi bạn bấm bắt đầu.</p>
 
+        <div class="tour-controls" aria-label="Tham quan tự động">
+          <label class="tour-demo-option" for="tour-simulation"><input id="tour-simulation" type="checkbox">Tham quan bằng GPS giả lập</label>
+          <button id="toggle-tour" class="button primary full-width" type="button" aria-pressed="false"><svg class="icon"><use href="#icon-audio"/></svg><span id="tour-button-label">Bắt đầu tham quan</span></button>
+          <p id="tour-status" class="helper" role="status">Tự động thuyết minh: Đang tắt</p>
+          <p id="auto-status" class="helper" role="status">Bấm bắt đầu để nghe khi đi vào một địa điểm.</p>
+        </div>
+
         <div class="simulation" id="simulation">
           <div class="subheading"><h3>Giả lập GPS</h3><span class="tag">CHẾ ĐỘ DEMO</span></div>
           <p class="helper">Thử một tọa độ để khám phá mà không cần di chuyển.</p>
@@ -107,7 +114,7 @@
         <section id="audio-panel" class="audio-panel" aria-labelledby="audio-title" aria-busy="false">
           <span class="audio-icon"><svg class="icon"><use href="#icon-audio"/></svg></span>
           <div class="audio-content">
-            <div class="subheading"><h2 id="audio-title">Audio thuyết minh</h2><span class="tag">NGHE THỦ CÔNG</span></div>
+            <div class="subheading"><h2 id="audio-title">Audio thuyết minh</h2><span class="tag">TỰ ĐỘNG / THỦ CÔNG</span></div>
             <p id="audio-status" role="status">Đến một địa điểm để chọn nội dung nghe.</p>
             <audio id="narration-audio" controls preload="none" aria-label="Nghe thuyết minh" hidden></audio>
             <button id="generate-audio" type="button" class="button secondary" hidden>Tạo audio cho ngôn ngữ này</button>

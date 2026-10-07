@@ -64,6 +64,10 @@ dt { color: var(--muted); font-size: 12px; }
 dd { margin: 0; font-size: 13px; font-weight: 550; font-variant-numeric: tabular-nums; }
 .coordinates dd { font-family: Consolas, "SFMono-Regular", monospace; }
 .gps-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.tour-controls { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.tour-demo-option { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: var(--muted); font-size: 12px; cursor: pointer; }
+.tour-demo-option input { width: 16px; height: 16px; min-height: 0; margin: 0; accent-color: var(--green); }
+#toggle-tour[aria-pressed="true"] { background: var(--green); }
 .button { border: 1px solid transparent; border-radius: 8px; padding: 11px 13px; display: inline-flex; justify-content: center; align-items: center; gap: 8px; min-height: 44px; font-size: 12px; font-weight: 650; text-decoration: none; transition: background .15s, border-color .15s; }
 .button .icon { width: 17px; height: 17px; }
 .primary { background: var(--orange); color: white; flex: 1; }
