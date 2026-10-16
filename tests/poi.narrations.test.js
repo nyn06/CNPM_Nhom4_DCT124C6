@@ -1,6 +1,6 @@
 jest.mock('../src/integrations/translation/translation.provider', () => ({ translate: jest.fn() }));
 
-const request = require('supertest');
+const request = require('./helpers/demo-request');
 const app = require('../src/app');
 const poiRepository = require('../src/repositories/poi.repository');
 const poiService = require('../src/services/poi.service');

@@ -123,6 +123,14 @@ class PoiService {
     };
   }
 
+  checkNarrationAccess(id, admin = false) {
+    if (!admin && this.getPoi(id).isActive !== true) {
+      const error = new Error('POI hiện không hoạt động.');
+      error.statusCode = 404;
+      throw error;
+    }
+  }
+
   getPoiNarrations(id) {
     const poi = this.getPoi(id);
     return { poiId: id, narrations: poi.narrations || {} };

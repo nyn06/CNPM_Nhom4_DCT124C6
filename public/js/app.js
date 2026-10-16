@@ -5,6 +5,8 @@
   const GPS_INTERVAL_MS = 3000;
   const REQUEST_TIMEOUT_MS = 10000;
   const { sourceLanguage, names: languageNames } = window.POI_LANGUAGES;
+  const access = window.TOUR_ACCESS;
+  let audioObjectUrl = null;
   let watchId = null;
   let gpsActive = false;
   let gpsSession = 0;
@@ -22,7 +24,6 @@
   let currentNarration = null;
   let audioController = null;
   let audioRequest = 0;
-  let generatingAudio = false;
   let autoEnabled = false;
   let insidePoiIds = new Set();
   let selectedPoiId = null;
@@ -69,7 +70,7 @@
   async function fetchJson(url, controller, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const response = await fetch(url, { ...options, signal: controller.signal, headers: { Accept: 'application/json' } });
+      const response = await fetch(url, { ...options, signal: controller.signal, headers: { Accept: 'application/json', ...options.headers } });
       let data;
       try {
         data = await response.json();
@@ -77,7 +78,9 @@
         throw new Error('Phản hồi không hợp lệ. Hãy kiểm tra server và thử lại.');
       }
       if (!response.ok) {
-        const error = new Error(data.error || `Yêu cầu thất bại (HTTP ${response.status}).`);
+        if (response.status === 401) access.lose();
+        const error = new Error(response.status === 401 ? 'Phiên đã hết hạn hoặc không hợp lệ.'
+          : response.status === 404 ? 'Chưa có nội dung thuyết minh.' : 'Chưa xử lý được yêu cầu. Hãy thử lại.');
         error.statusCode = response.status;
         throw error;
       }
@@ -121,12 +124,13 @@
     audioRequest++;
     if (audioController) audioController.abort();
     audioController = null;
-    generatingAudio = false;
     currentNarration = null;
     const audio = byId('narration-audio');
     audio.pause();
     audio.removeAttribute('src');
     audio.load();
+    if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl);
+    audioObjectUrl = null;
     audio.hidden = true;
     byId('generate-audio').hidden = true;
     byId('generate-audio').disabled = false;
@@ -134,13 +138,14 @@
     setMessage('audio-status', 'Đến một địa điểm để chọn nội dung nghe.');
   }
 
-  function displayAudio(narration) {
+  async function displayAudio(narration) {
     currentNarration = narration;
-    byId('generate-audio').hidden = false;
+    // TTS belongs to the local Admin. Tourists consume prepared audio.
+    byId('generate-audio').hidden = true;
     const audioUrl = narration.audioUrl;
     if (!audioUrl) {
       byId('generate-audio').textContent = 'Tạo audio cho ngôn ngữ này';
-      setMessage('audio-status', 'Chưa có audio cho ngôn ngữ này. Bấm tạo audio để chuẩn bị nội dung nghe.');
+      setMessage('audio-status', 'Chưa có audio cho ngôn ngữ này. Người quản lý cần chuẩn bị audio.');
       return;
     }
     // Chỉ chấp nhận WAV của Backend cùng origin, không nhận URL ngoài hoặc path traversal.
@@ -148,8 +153,28 @@
       setMessage('audio-status', 'Đường dẫn audio không hợp lệ.', 'error');
       return;
     }
+    const requestId = ++audioRequest;
+    const controller = new AbortController();
+    audioController = controller;
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(audioUrl, { signal: controller.signal, headers: access.headers(), cache: 'no-store' });
+      if (response.status === 401) { access.lose(); return; }
+      if (!response.ok) throw new Error('Không tải được audio. Hãy thử tải lại nội dung.');
+      const blob = await response.blob();
+      if (requestId !== audioRequest || !access.active()) return;
+      if (blob.type !== 'audio/wav' && blob.type !== 'audio/x-wav') throw new Error('Audio trả về không hợp lệ.');
+      audioObjectUrl = URL.createObjectURL(blob);
+    } catch {
+      if (requestId === audioRequest) setMessage('audio-status', 'Không tải được audio. Hãy kiểm tra mạng và thử tải lại nội dung.', 'error');
+      return;
+    } finally {
+      clearTimeout(timeout);
+      if (requestId === audioRequest) audioController = null;
+    }
+    if (requestId !== audioRequest || !access.active()) return;
     const audio = byId('narration-audio');
-    audio.setAttribute('src', audioUrl);
+    audio.setAttribute('src', audioObjectUrl);
     audio.hidden = false;
     byId('generate-audio').textContent = 'Tạo lại audio';
     setMessage('audio-status', 'Audio đã sẵn sàng. Bấm Play để nghe.');
@@ -157,7 +182,7 @@
 
   async function playAutoNarration() {
     const entry = pendingAutoEntry;
-    if (!autoEnabled || !entry || entry.started || confirmedLocationRevision !== locationRevision
+    if (!access.active() || !autoEnabled || !entry || entry.started || confirmedLocationRevision !== locationRevision
       || nearbyController || selectedPoiId !== entry.poiId || !insidePoiIds.has(entry.poiId)
       || currentNarration?.poiId !== entry.poiId || currentNarration.language !== entry.language
       || byId('language').value !== entry.language) return;
@@ -168,7 +193,7 @@
     if (!audio.getAttribute('src')) {
       setMessage('auto-status', currentNarration.audioUrl
         ? 'Đường dẫn audio không hợp lệ. Hãy kiểm tra nội dung của điểm này.'
-        : 'Điểm này chưa có audio cho ngôn ngữ đã chọn. Bạn có thể bấm Tạo audio.');
+        : 'Điểm này chưa có audio cho ngôn ngữ đã chọn. Người quản lý cần chuẩn bị audio.');
       return;
     }
     setMessage('auto-status', `Đang tự động phát ${currentPoi.name}…`, 'success');
@@ -203,6 +228,7 @@
       stopGps();
       return;
     }
+    if (!access.active()) { access.lose('Hãy kích hoạt vé trước khi bắt đầu tham quan.'); return; }
     autoEnabled = true;
     insidePoiIds.clear();
     selectedPoiId = null;
@@ -223,40 +249,16 @@
     }
   }
 
-  async function generateAudio() {
-    if (!currentPoi || !currentNarration || generatingAudio) return;
-    const poi = currentPoi;
-    const language = byId('language').value;
-    const requestId = ++audioRequest;
-    const controller = new AbortController();
-    audioController = controller;
-    generatingAudio = true;
-    byId('generate-audio').disabled = true;
-    byId('audio-panel').setAttribute('aria-busy', 'true');
-    setMessage('audio-status', 'Đang tạo audio thuyết minh…');
-    try {
-      await fetchJson(`/api/pois/${encodeURIComponent(poi.id)}/narrations/${encodeURIComponent(language)}/audio`,
-        controller, { method: 'POST' }, 130000);
-      if (requestId !== audioRequest) return;
-      await loadNarration(poi, true);
-      if (autoEnabled && currentNarration?.poiId === poi.id && currentNarration.language === language
-        && byId('narration-audio').getAttribute('src')) {
-        setMessage('auto-status', 'Audio đã sẵn sàng. Bấm Play để nghe; tự phát ở lần vào tiếp theo.');
-      }
-    } catch (error) {
-      if (requestId !== audioRequest) return;
-      setMessage('audio-status', error.message, 'error');
-    } finally {
-      if (requestId === audioRequest) {
-        generatingAudio = false;
-        audioController = null;
-        byId('generate-audio').disabled = false;
-        byId('audio-panel').setAttribute('aria-busy', 'false');
-      }
-    }
+  function generateAudio() {
+    setMessage('audio-status', 'Tạo audio trong trang Admin demo local.');
   }
 
   async function loadNarration(poi, force = false, autoEntry = false) {
+    if (!access.active()) {
+      clearNarration();
+      setMessage('narration-status', 'Kích hoạt vé để xem và nghe thuyết minh.');
+      return;
+    }
     const language = byId('language').value;
     const key = `${poi.id}:${language}:${poi.updatedAt || ''}`;
     currentPoi = poi;
@@ -277,7 +279,8 @@
     setMessage('audio-status', 'Đang kiểm tra audio cho ngôn ngữ đã chọn…');
 
     try {
-      const data = await fetchJson(`/api/pois/${encodeURIComponent(poi.id)}/narrations/${encodeURIComponent(language)}`, controller);
+      const data = await fetchJson(`/api/pois/${encodeURIComponent(poi.id)}/narrations/${encodeURIComponent(language)}`, controller,
+        { headers: access.headers() });
       if (requestId !== narrationRequest) return;
       if (!data || data.poiId !== poi.id || data.language !== language || typeof data.text !== 'string' || !data.text.trim()) {
         throw new Error('Nội dung thuyết minh trả về không hợp lệ.');
@@ -286,7 +289,7 @@
       byId('narration-text').setAttribute('lang', language);
       byId('narration-text').hidden = false;
       setMessage('narration-status', `Nội dung của ${poi.name}`);
-      displayAudio(data);
+      await displayAudio(data);
       playAutoNarration();
     } catch (error) {
       if (requestId !== narrationRequest) return;
@@ -617,9 +620,12 @@
   byId('generate-audio').addEventListener('click', generateAudio);
   byId('narration-audio').addEventListener('error', () => {
     if (byId('narration-audio').getAttribute('src')) {
-      setMessage('audio-status', 'Không tải được audio. Hãy thử tải lại nội dung hoặc tạo lại audio.', 'error');
-      if (autoEnabled) setMessage('auto-status', 'Không tải được audio. Hãy bấm thử tải lại nội dung hoặc tạo lại audio.', 'error');
+      setMessage('audio-status', 'Không tải được audio. Hãy thử tải lại nội dung.', 'error');
+      if (autoEnabled) setMessage('auto-status', 'Không tải được audio. Hãy thử tải lại nội dung.', 'error');
     }
+  });
+  access.subscribe((valid) => {
+    if (!valid) { disableAutoNarration(); clearNarration(); }
   });
   window.addEventListener('pagehide', () => { disableAutoNarration(); stopTracking(); cancelNearby(); clearNarration(); });
   loadPois();

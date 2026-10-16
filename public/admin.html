@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="/css/admin.css">
   <script src="/js/poi-languages.js" defer></script>
   <script src="/js/admin.js" defer></script>
+  <script src="/js/vouchers.js" defer></script>
 </head>
 <body class="admin-page">
   <a class="skip-link" href="#admin-main">Đến nội dung quản lý</a>
@@ -25,6 +26,19 @@
       <button id="new-poi" type="button" class="button primary">+ Thêm POI</button>
     </div>
     <noscript><p class="notice" data-tone="error">Hãy bật JavaScript để sử dụng trang quản lý.</p></noscript>
+    <p class="notice" data-tone="info">Demo-only: quản trị chưa có xác thực, chỉ dùng trên máy local với DEMO_ADMIN_ENABLED=true. Không triển khai công khai. Vé QR chỉ mô phỏng cấp quyền sau mua vé, chưa có thanh toán thật.</p>
+    <section class="panel admin-panel voucher-panel" aria-labelledby="voucher-title">
+      <div class="admin-section-heading"><h2 id="voucher-title">QUẢN LÝ VÉ QR</h2><button id="reload-vouchers" class="button secondary" type="button">Tải lại trạng thái</button></div>
+      <form id="voucher-form" class="voucher-actions">
+        <label for="voucher-duration">Thời hạn vé</label><select id="voucher-duration"><option value="15">15 phút</option><option value="60" selected>60 phút</option><option value="120">120 phút</option></select><button id="create-voucher" class="button primary" type="submit">Tạo voucher</button>
+      </form>
+      <p id="voucher-message" class="helper" role="status">Mỗi vé chỉ kích hoạt một lần; thời hạn bắt đầu khi khách kích hoạt.</p>
+      <div id="voucher-result" class="voucher-result" hidden>
+        <img id="voucher-qr" width="240" height="240" alt="QR kích hoạt vé tham quan">
+        <div><p id="created-voucher-status" class="helper"></p><label for="activation-url">URL kích hoạt (chỉ hiển thị khi tạo)</label><input id="activation-url" type="text" readonly><button id="copy-voucher-url" type="button" class="button secondary">Sao chép URL</button><p id="voucher-origin-note" class="helper" role="status"></p></div>
+      </div>
+      <ul id="voucher-list" class="voucher-list" aria-label="Trạng thái vé" aria-busy="false"></ul>
+    </section>
     <p id="action-status" class="admin-message" role="status" aria-live="polite">Chọn một địa điểm hoặc thêm POI mới để bắt đầu.</p>
     <div class="admin-workspace">
       <section class="panel admin-list" aria-labelledby="list-title">

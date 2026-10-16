@@ -1,4 +1,10 @@
 const poiService = require('../services/poi.service');
+const publicPoi = (poi) => {
+  if (!poi) return poi;
+  const result = { ...poi };
+  delete result.narrations;
+  return result;
+};
 
 class PoiController {
   createPoi(req, res, next) {
@@ -15,7 +21,7 @@ class PoiController {
     try {
       const pois = poiService.getPois();
 
-      res.status(200).json(pois);
+      res.status(200).json(pois.map(publicPoi));
     } catch (error) {
       next(error);
     }
@@ -26,7 +32,7 @@ class PoiController {
       const { lat, lng } = req.query;
       const result = poiService.getNearbyPois({ lat, lng });
 
-      res.status(200).json(result);
+      res.status(200).json({ ...result, pois: result.pois.map(publicPoi), nearestPoi: publicPoi(result.nearestPoi) });
     } catch (error) {
       next(error);
     }
@@ -42,6 +48,7 @@ class PoiController {
 
   getPoiNarration(req, res, next) {
     try {
+      poiService.checkNarrationAccess(req.params.id, req.demoAdmin);
       res.status(200).json(poiService.getPoiNarration(req.params.id, req.params.language));
     } catch (error) {
       next(error);
@@ -50,6 +57,7 @@ class PoiController {
 
   getPoiNarrations(req, res, next) {
     try {
+      poiService.checkNarrationAccess(req.params.id, req.demoAdmin);
       res.status(200).json(poiService.getPoiNarrations(req.params.id));
     } catch (error) {
       next(error);
@@ -78,7 +86,7 @@ class PoiController {
     try {
       const poi = poiService.getPoi(req.params.id);
 
-      res.status(200).json(poi);
+      res.status(200).json(publicPoi(poi));
     } catch (error) {
       next(error);
     }

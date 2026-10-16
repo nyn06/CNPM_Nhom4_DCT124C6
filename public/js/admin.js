@@ -52,7 +52,7 @@
     try {
       const response = await fetch(url, {
         method, signal: controller.signal,
-        headers: { Accept: 'application/json', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+        headers: { Accept: 'application/json', 'X-Demo-Admin': 'true', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
       if (!response.ok) throw apiError(response.status, scope);
@@ -457,7 +457,7 @@
     stopPreview();
     const revision = previewRevision;
     const audio = byId('preview-audio');
-    audio.setAttribute('src', narrations[language].audioUrl);
+    audio.setAttribute('src', narrations[language].audioUrl.replace('/audio/', '/api/admin/audio/'));
     audio.hidden = false;
     message('preview-status', `Đang nghe thử ${languageNames[language]}.`, 'success');
     try { await audio.play(); }

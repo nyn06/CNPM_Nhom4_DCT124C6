@@ -1,7 +1,7 @@
 jest.mock('../src/integrations/tts/piperTts.provider', () => ({ synthesize: jest.fn() }));
 jest.mock('../src/integrations/translation/translation.provider', () => ({ translate: jest.fn() }));
 
-const request = require('supertest');
+const request = require('./helpers/demo-request');
 const app = require('../src/app');
 const poiService = require('../src/services/poi.service');
 const poiRepository = require('../src/repositories/poi.repository');
@@ -219,7 +219,7 @@ describe('Stage 5: POI audio', () => {
     const nearby = await request(app).get('/api/pois/nearby?lat=10&lng=106');
     expect(nearby.status).toBe(200);
     expect(nearby.body.nearestPoi.id).toBe(poi.id);
-    expect(nearby.body.nearestPoi.narrations.vi.audioFile).toBe('narration_vi_test.wav');
+    expect(nearby.body.nearestPoi).not.toHaveProperty('narrations');
     await request(app).get('/').expect(200).expect(/narration-audio/);
     await request(app).get(`/api/pois/${poi.id}`).expect(200);
     await request(app).delete(`/api/pois/${poi.id}`).expect(204);

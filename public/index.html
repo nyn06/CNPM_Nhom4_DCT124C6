@@ -9,6 +9,7 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/css/style.css">
   <script src="/js/poi-languages.js" defer></script>
+  <script src="/js/access.js" defer></script>
   <script src="/js/app.js" defer></script>
 </head>
 <body>
@@ -46,6 +47,15 @@
     </section>
 
     <noscript><p class="notice" data-tone="error">Hãy bật JavaScript để sử dụng GPS và kiểm tra địa điểm.</p></noscript>
+    <section class="panel access-panel" aria-labelledby="access-title">
+      <div class="subheading"><h2 id="access-title">Vé tham quan QR</h2><span id="access-status" class="badge">Chưa kích hoạt</span></div>
+      <form id="access-form">
+        <label for="voucher-code">Mã voucher</label>
+        <div class="access-actions"><input id="voucher-code" type="text" autocomplete="off" spellcheck="false" maxlength="64" placeholder="Quét QR hoặc nhập mã vé" required><button id="activate-voucher" class="button primary" type="submit">Kích hoạt vé</button></div>
+      </form>
+      <p id="access-message" class="helper" role="status">Kích hoạt vé để nghe thuyết minh. Đây là mô phỏng cấp vé, chưa có thanh toán thật.</p>
+      <dl class="access-times"><div><dt>Hết hạn lúc</dt><dd id="access-expiry">—</dd></div><div><dt>Thời gian còn lại</dt><dd id="access-countdown">00:00</dd></div></dl>
+    </section>
     <div class="workspace">
       <section class="panel location-panel" aria-labelledby="location-title">
         <div class="section-heading"><span class="step-number">01</span><h2 id="location-title">Vị trí của bạn</h2></div>

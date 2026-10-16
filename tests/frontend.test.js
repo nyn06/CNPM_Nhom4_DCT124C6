@@ -36,10 +36,13 @@ async function setup(options = {}) {
     localStorage.setItem.mockImplementation(() => { throw new Error('Storage blocked'); });
   }
   const window = { isSecureContext: options.secure !== false, addEventListener: jest.fn() };
+  window.TOUR_ACCESS = { active: () => true, headers: () => ({ Authorization: 'Bearer fixture' }), lose: jest.fn(), subscribe: (fn) => fn(true) };
+  const mediaFetch = (url, requestOptions) => url.startsWith('/audio/')
+    ? Promise.resolve({ ok: true, blob: async () => ({ type: 'audio/wav', url }) }) : fetch(url, requestOptions);
   vm.runInNewContext(languageScript + '\n' + script, {
     document: { getElementById: (id) => elements[id], createElement },
     window, navigator: { geolocation: options.unsupported ? undefined : geolocation },
-    localStorage, fetch, AbortController, URLSearchParams, TypeError,
+    localStorage, fetch: mediaFetch, AbortController, URLSearchParams, URL: { createObjectURL: (blob) => `blob:${blob.url}`, revokeObjectURL: jest.fn() }, TypeError,
     Date, setTimeout, clearTimeout,
   });
   await jest.advanceTimersByTimeAsync(0);
@@ -220,7 +223,7 @@ describe('Frontend Stage 5: nghe audio thủ công', () => {
     expect(html).not.toMatch(/<audio[^>]*autoplay/);
     const { elements, fetch } = await arrive('/audio/narration_vi.wav');
     expect(elements['narration-audio'].hidden).toBe(false);
-    expect(elements['narration-audio'].attributes.src).toBe('/audio/narration_vi.wav');
+    expect(elements['narration-audio'].attributes.src).toBe('blob:/audio/narration_vi.wav');
     expect(elements['narration-audio'].play).not.toHaveBeenCalled();
     expect(elements['audio-status'].textContent).toContain('Bấm Play');
     expect(fetch.mock.calls.some(([, options]) => options.method === 'POST')).toBe(false);
@@ -234,14 +237,14 @@ describe('Frontend Stage 5: nghe audio thủ công', () => {
     expect(elements['narration-audio'].hidden).toBe(true);
     expect(elements['narration-audio'].getAttribute('src')).toBeNull();
     await jest.advanceTimersByTimeAsync(0);
-    expect(elements['narration-audio'].attributes.src).toBe('/audio/narration_ja.wav');
+    expect(elements['narration-audio'].attributes.src).toBe('blob:/audio/narration_ja.wav');
     expect(elements['audio-title'].textContent).toContain('日本語');
     expect(elements['narration-audio'].pause.mock.calls.length).toBeGreaterThan(pauseCount);
     expect(elements['narration-audio'].play).not.toHaveBeenCalled();
     expect(fetch.mock.calls.filter(([url]) => url.includes('/nearby'))).toHaveLength(1);
   });
 
-  it('chưa có audio giữ text, có nút tạo và không giữ src của language cũ', async () => {
+  it('chưa có audio giữ text, hướng dẫn Admin và không giữ src của language cũ', async () => {
     const { elements, fetch } = await arrive('/audio/narration_vi.wav');
     fetch.mockResolvedValueOnce(content('ko'));
     choose(elements, 'ko');
@@ -249,7 +252,7 @@ describe('Frontend Stage 5: nghe audio thủ công', () => {
     expect(elements['narration-text'].textContent).toBe('Text ko');
     expect(elements['narration-audio'].hidden).toBe(true);
     expect(elements['narration-audio'].getAttribute('src')).toBeNull();
-    expect(elements['generate-audio'].hidden).toBe(false);
+    expect(elements['generate-audio'].hidden).toBe(true);
     expect(elements['audio-status'].textContent).toContain('Chưa có audio');
   });
 
@@ -273,50 +276,35 @@ describe('Frontend Stage 5: nghe audio thủ công', () => {
     }
   );
 
-  it('chỉ bấm tạo mới POST một lần, khóa nút, refresh GET và không auto-play', async () => {
+  it('Tourist không gọi endpoint tạo TTS, kể cả kích hoạt control bằng script', async () => {
     const { elements, fetch } = await arrive();
-    let finish;
-    fetch.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     elements['generate-audio'].events.click();
     elements['generate-audio'].events.click();
-    expect(elements['generate-audio'].disabled).toBe(true);
-    expect(elements['audio-panel'].attributes['aria-busy']).toBe('true');
-    expect(fetch.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(1);
-    expect(fetch.mock.calls.at(-1)[0]).toBe('/api/pois/audio-poi/narrations/vi/audio');
-    fetch.mockResolvedValueOnce(content('vi', '/audio/narration_new.wav'));
-    finish(jsonResponse({ audioUrl: '/audio/narration_new.wav' }));
-    await jest.advanceTimersByTimeAsync(0);
-    expect(fetch.mock.calls.at(-1)[0]).toBe('/api/pois/audio-poi/narrations/vi');
-    expect(elements['narration-audio'].attributes.src).toBe('/audio/narration_new.wav');
+    expect(elements['generate-audio'].hidden).toBe(true);
+    expect(fetch.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(0);
+    expect(elements['audio-status'].textContent).toContain('Admin demo local');
     expect(elements['narration-audio'].play).not.toHaveBeenCalled();
-    expect(elements['generate-audio'].disabled).toBe(false);
-    expect(elements['audio-panel'].attributes['aria-busy']).toBe('false');
   });
 
-  it('Piper failure ở Backend hiển thị lỗi, giữ text và mở lại nút', async () => {
+  it('Tourist giữ nội dung khi yêu cầu chuẩn bị audio tại Admin', async () => {
     const { elements, fetch } = await arrive();
     fetch.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({ error: 'Không tạo được audio' }) });
     elements['generate-audio'].events.click();
     await jest.advanceTimersByTimeAsync(0);
-    expect(elements['audio-status'].textContent).toBe('Không tạo được audio');
+    expect(elements['audio-status'].textContent).toContain('Admin demo local');
     expect(elements['narration-text'].textContent).toBe('Text vi');
     expect(elements['generate-audio'].disabled).toBe(false);
     expect(elements['narration-audio'].play).not.toHaveBeenCalled();
   });
 
-  it('đổi language trong khi tạo audio bỏ qua kết quả cũ', async () => {
+  it('đổi language sau hướng dẫn tạo audio dùng metadata mới, không POST', async () => {
     const { elements, fetch } = await arrive();
-    let finish;
-    fetch.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
     elements['generate-audio'].events.click();
-    const signal = fetch.mock.calls.at(-1)[1].signal;
     fetch.mockResolvedValueOnce(content('en', '/audio/narration_en.wav'));
     choose(elements, 'en');
     await jest.advanceTimersByTimeAsync(0);
-    finish(jsonResponse({ audioUrl: '/audio/narration_old_vi.wav' }));
-    await jest.advanceTimersByTimeAsync(0);
-    expect(signal.aborted).toBe(true);
-    expect(elements['narration-audio'].attributes.src).toBe('/audio/narration_en.wav');
+    expect(elements['narration-audio'].attributes.src).toBe('blob:/audio/narration_en.wav');
+    expect(fetch.mock.calls.filter(([, options]) => options.method === 'POST')).toHaveLength(0);
     expect(fetch.mock.calls.filter(([url]) => url.endsWith('/narrations/vi'))).toHaveLength(1);
     expect(elements['generate-audio'].disabled).toBe(false);
   });

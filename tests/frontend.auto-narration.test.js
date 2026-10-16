@@ -42,6 +42,7 @@ async function setup({ language = 'vi', unsupported = false, secure = true } = {
     generation: () => json({}),
   };
   const fetch = jest.fn(async (url) => {
+    if (url.startsWith('/audio/')) return { ok: true, blob: async () => ({ type: 'audio/wav', url }) };
     if (url === '/api/pois') return json([]);
     if (url.startsWith('/api/pois/nearby?')) {
       if (state.nearby instanceof Error) throw state.nearby;
@@ -53,11 +54,14 @@ async function setup({ language = 'vi', unsupported = false, secure = true } = {
   });
   const geolocation = { watchPosition: jest.fn(() => 0), clearWatch: jest.fn() };
   const window = { isSecureContext: secure, addEventListener: jest.fn() };
+  // Stage 6 transition tests run under an already valid Stage 8 session.
+  // The real lifecycle and authorization headers are tested separately.
+  window.TOUR_ACCESS = { active: () => true, headers: () => ({ Authorization: 'Bearer fixture' }), lose: jest.fn(), subscribe: (fn) => fn(true) };
   vm.runInNewContext(scripts, {
     document: { getElementById: (id) => elements[id], createElement: element },
     window, navigator: { geolocation: unsupported ? undefined : geolocation },
     localStorage: { getItem: () => language, setItem: jest.fn() },
-    fetch, AbortController, URLSearchParams, TypeError, Date, setTimeout, clearTimeout,
+    fetch, AbortController, URLSearchParams, URL: { createObjectURL: (blob) => `blob:${blob.url}`, revokeObjectURL: jest.fn() }, TypeError, Date, setTimeout, clearTimeout,
   });
   await flush();
   return { elements, state, fetch, geolocation, window, audio: elements['narration-audio'] };
@@ -122,7 +126,7 @@ describe('Stage 6: chế độ tham quan và transition geofence', () => {
     expect(ui.audio.play).not.toHaveBeenCalled();
     await simulate(ui, inside());
     expect(ui.audio.play).toHaveBeenCalledTimes(1);
-    expect(ui.audio.getAttribute('src')).toBe('/audio/saved_poi-a_vi.wav');
+    expect(ui.audio.getAttribute('src')).toBe('blob:/audio/saved_poi-a_vi.wav');
     expect(narrationCalls(ui).map(([url]) => url)).toEqual(['/api/pois/poi-a/narrations/vi']);
     expect(postCalls(ui)).toEqual([]);
     expect(ui.elements['auto-status'].textContent).toContain('Đã phát điểm');
@@ -160,7 +164,7 @@ describe('Stage 6: chế độ tham quan và transition geofence', () => {
     await simulate(ui, inside());
     expect(ui.audio.hidden).toBe(false);
     expect(ui.audio.play).not.toHaveBeenCalled();
-    expect(ui.elements['generate-audio'].hidden).toBe(false);
+    expect(ui.elements['generate-audio'].hidden).toBe(true);
     await ui.audio.play(); // Người dùng bấm native Play.
     await simulate(ui, inside());
     expect(ui.audio.play).toHaveBeenCalledTimes(1);
@@ -247,7 +251,7 @@ describe('Stage 6: ngôn ngữ, nhiều POI và fallback', () => {
     start(ui);
     await simulate(ui, inside());
     expect(narrationCalls(ui)[0][0]).toBe(`/api/pois/poi-a/narrations/${language}`);
-    expect(ui.audio.getAttribute('src')).toBe('/audio/opaque_server_filename.wav');
+    expect(ui.audio.getAttribute('src')).toBe('blob:/audio/opaque_server_filename.wav');
     expect(ui.audio.play).toHaveBeenCalledTimes(1);
   });
 
@@ -256,7 +260,7 @@ describe('Stage 6: ngôn ngữ, nhiều POI và fallback', () => {
     start(ui);
     await simulate(ui, inside());
     await choose(ui, 'en');
-    expect(ui.audio.getAttribute('src')).toBe('/audio/saved_poi-a_en.wav');
+    expect(ui.audio.getAttribute('src')).toBe('blob:/audio/saved_poi-a_en.wav');
     expect(ui.audio.play).toHaveBeenCalledTimes(1);
     expect(nearbyCalls(ui)).toHaveLength(1);
     expect(ui.geolocation.watchPosition).not.toHaveBeenCalled();
@@ -268,7 +272,7 @@ describe('Stage 6: ngôn ngữ, nhiều POI và fallback', () => {
     expect(narrationCalls(ui).at(-1)[0]).toBe('/api/pois/poi-a/narrations/en');
   });
 
-  it('thiếu audioUrl giữ text/nút tạo, không tự POST hay retry mỗi GPS update', async () => {
+  it('thiếu audioUrl giữ text, không tự POST hay retry mỗi GPS update', async () => {
     const ui = await setup();
     ui.state.narration = (id, code) => metadata(id, code, null);
     start(ui);
@@ -277,12 +281,12 @@ describe('Stage 6: ngôn ngữ, nhiều POI và fallback', () => {
     expect(ui.audio.play).not.toHaveBeenCalled();
     expect(ui.elements['auto-status'].textContent).toContain('chưa có audio');
     expect(ui.elements['narration-text'].hidden).toBe(false);
-    expect(ui.elements['generate-audio'].hidden).toBe(false);
+    expect(ui.elements['generate-audio'].hidden).toBe(true);
     expect(postCalls(ui)).toEqual([]);
     expect(narrationCalls(ui)).toHaveLength(1);
   });
 
-  it('Tạo audio thủ công vẫn POST/refresh GET, không tạo auto entry', async () => {
+  it('TTS dành cho Admin; Tourist không POST hoặc tạo auto entry', async () => {
     const ui = await setup();
     ui.state.narration = (id, code) => metadata(id, code, null);
     start(ui);
@@ -290,13 +294,12 @@ describe('Stage 6: ngôn ngữ, nhiều POI và fallback', () => {
     ui.state.narration = (id, code) => metadata(id, code);
     ui.elements['generate-audio'].events.click();
     await flush();
-    expect(postCalls(ui)).toHaveLength(1);
-    expect(postCalls(ui)[0][0]).toBe('/api/pois/poi-a/narrations/vi/audio');
-    expect(ui.audio.hidden).toBe(false);
+    expect(postCalls(ui)).toHaveLength(0);
+    expect(ui.elements['generate-audio'].hidden).toBe(true);
+    expect(ui.audio.hidden).toBe(true);
     expect(ui.audio.play).not.toHaveBeenCalled();
-    await ui.audio.play();
     await simulate(ui, inside());
-    expect(ui.audio.play).toHaveBeenCalledTimes(1);
+    expect(ui.audio.play).not.toHaveBeenCalled();
   });
 
   it('play rejection được catch, giữ manual fallback và không retry khi inside', async () => {
@@ -327,7 +330,7 @@ describe('Stage 6: ngôn ngữ, nhiều POI và fallback', () => {
     start(ui);
     await simulate(ui, inside(b, [a, b]));
     expect(narrationCalls(ui).map(([url]) => url)).toEqual(['/api/pois/poi-b/narrations/vi']);
-    expect(ui.audio.getAttribute('src')).toBe('/audio/saved_poi-b_vi.wav');
+    expect(ui.audio.getAttribute('src')).toBe('blob:/audio/saved_poi-b_vi.wav');
     expect(ui.audio.play).toHaveBeenCalledTimes(1);
   });
 
@@ -340,7 +343,7 @@ describe('Stage 6: ngôn ngữ, nhiều POI và fallback', () => {
     await simulate(ui, inside());
     playback.length = 0;
     await simulate(ui, inside(b, [b, a]), '10.00001');
-    expect(playback).toEqual(['pause:/audio/saved_poi-a_vi.wav', 'play:/audio/saved_poi-b_vi.wav']);
+    expect(playback).toEqual(['pause:blob:/audio/saved_poi-a_vi.wav', 'play:blob:/audio/saved_poi-b_vi.wav']);
     expect(ui.audio.play).toHaveBeenCalledTimes(2);
   });
 
@@ -351,7 +354,7 @@ describe('Stage 6: ngôn ngữ, nhiều POI và fallback', () => {
     await simulate(ui, inside(b, [b, a]), '10.00001');
     await simulate(ui, inside(a, [a, b]), '10.00002');
     expect(ui.audio.play).toHaveBeenCalledTimes(1);
-    expect(ui.audio.getAttribute('src')).toBe('/audio/saved_poi-a_vi.wav');
+    expect(ui.audio.getAttribute('src')).toBe('blob:/audio/saved_poi-a_vi.wav');
   });
 
   it('ra khỏi A trong khi còn inside B cũng re-arm riêng A', async () => {
@@ -404,8 +407,8 @@ describe('Stage 6: request và play đến muộn', () => {
     await flush();
     expect(signal.aborted).toBe(true);
     expect(ui.audio.play).toHaveBeenCalledTimes(action === 'switch' ? 1 : 0);
-    if (action === 'switch') expect(ui.audio.getAttribute('src')).toBe('/audio/saved_poi-b_vi.wav');
-    if (action === 'language') expect(ui.audio.getAttribute('src')).toBe('/audio/saved_poi-a_en.wav');
+    if (action === 'switch') expect(ui.audio.getAttribute('src')).toBe('blob:/audio/saved_poi-b_vi.wav');
+    if (action === 'language') expect(ui.audio.getAttribute('src')).toBe('blob:/audio/saved_poi-a_en.wav');
   });
 
   it('GPS inside lặp lúc đang tải metadata không hủy entry hoặc tạo GET mới', async () => {
@@ -450,7 +453,7 @@ describe('Stage 6: request và play đến muộn', () => {
     await choose(ui, 'ko');
     pending.reject(new Error('Old blocked play'));
     await flush();
-    expect(ui.audio.getAttribute('src')).toBe('/audio/saved_poi-a_ko.wav');
+    expect(ui.audio.getAttribute('src')).toBe('blob:/audio/saved_poi-a_ko.wav');
     expect(ui.elements['audio-status'].textContent).toContain('sẵn sàng');
     expect(ui.elements['auto-status'].textContent).toContain('Đã đổi ngôn ngữ');
   });
@@ -477,7 +480,7 @@ describe('Stage 6: request và play đến muộn', () => {
     pending.resolve(json(inside()));
     await flush();
     expect(ui.audio.play).toHaveBeenCalledTimes(1);
-    expect(ui.audio.getAttribute('src')).toBe('/audio/saved_poi-b_vi.wav');
+    expect(ui.audio.getAttribute('src')).toBe('blob:/audio/saved_poi-b_vi.wav');
     expect(narrationCalls(ui).map(([url]) => url)).toEqual(['/api/pois/poi-b/narrations/vi']);
   });
 

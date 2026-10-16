@@ -319,7 +319,7 @@ describe('Stage 7: VI, translation và audio', () => {
     expect(ui.audio.play).not.toHaveBeenCalled();
     click(ui.cards[code]['.listen-audio']);
     await flush();
-    expect(ui.audio.getAttribute('src')).toBe(`/audio/generated_${code}_1.wav`);
+    expect(ui.audio.getAttribute('src')).toBe(`/api/admin/audio/generated_${code}_1.wav`);
     expect(ui.audio.play).toHaveBeenCalledTimes(1);
   });
 
@@ -353,7 +353,7 @@ describe('Stage 7: VI, translation và audio', () => {
     history.length = 0;
     click(ui.cards.en['.listen-audio']);
     await flush();
-    expect(history).toEqual(['pause:/audio/server_vi.wav', 'play:/audio/server_en.wav']);
+    expect(history).toEqual(['pause:/api/admin/audio/server_vi.wav', 'play:/api/admin/audio/server_en.wav']);
   });
 
   it('play reject có fallback, không unhandled rejection; media error không gọi TTS', async () => {

@@ -1,4 +1,12 @@
 .admin-main { padding-top: 30px; }
+.voucher-panel { margin-bottom: 24px; }
+.voucher-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 16px; }
+.voucher-actions .primary { flex: none; }
+.voucher-result { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 22px; align-items: center; margin-top: 18px; }
+#voucher-qr { width: 240px; max-width: 100%; height: auto; }
+#activation-url { margin: 8px 0; }
+.voucher-list { max-height: 240px; overflow-y: auto; padding-left: 22px; font-size: 12px; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .voucher-result { grid-template-columns: 1fr; } }
 .admin-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 18px; }
 .admin-heading h1 { font-size: clamp(24px, 3vw, 34px); margin: 8px 0; }
 .admin-heading .primary { flex: none; white-space: nowrap; }
