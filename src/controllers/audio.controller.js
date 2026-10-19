@@ -1,5 +1,8 @@
 const audioService = require('../services/audio.service');
 const accessService = require('../services/access.service');
+const authService = require('../services/auth.service');
+const { cookie } = require('../utils/authHttp');
+const { SESSION_COOKIE } = require('../config/auth');
 
 async function serveAudio(req, res, next) {
   try {
@@ -8,9 +11,10 @@ async function serveAudio(req, res, next) {
       return res.status(405).json({ error: 'Audio chỉ hỗ trợ GET hoặc HEAD.' });
     }
     const filename = decodeURIComponent(req.path.slice(1));
-    const file = await audioService.resolveAudio(filename, req.demoAdmin === true);
+    const file = await audioService.resolveAudio(filename, !!req.admin);
     // Recheck after filesystem await, so expiration during lookup is rejected.
-    if (!req.demoAdmin) accessService.validateAuthorization(req.get('authorization'));
+    if (req.admin) authService.authenticate(cookie(req, SESSION_COOKIE));
+    else accessService.validateAuthorization(req.get('authorization'));
     res.type('audio/wav');
     res.set('Cache-Control', 'no-store');
     res.sendFile(file, { cacheControl: false, lastModified: false }, (error) => {

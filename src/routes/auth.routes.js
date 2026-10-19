@@ -1,0 +1,11 @@
+const express = require('express');
+const controller = require('../controllers/auth.controller');
+const { requireAdmin } = require('../middlewares/requireAdmin');
+const csrf = require('../middlewares/csrf');
+const router = express.Router();
+router.use('/auth', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+router.get('/auth/csrf', controller.getCsrf);
+router.post('/auth/login', csrf(true), controller.login);
+router.get('/auth/me', requireAdmin, controller.me);
+router.post('/auth/logout', requireAdmin, csrf(), controller.logout);
+module.exports = router;

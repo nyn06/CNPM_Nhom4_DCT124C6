@@ -24,7 +24,8 @@ async function setup() {
     return json(options.method === 'POST' ? state.voucher : state.list, state.status);
   });
   const clipboard = { writeText: jest.fn().mockResolvedValue() };
-  vm.runInNewContext(script, { document: { getElementById: (id) => elements[id], createElement: element }, window: { addEventListener: jest.fn() }, navigator: { clipboard }, fetch, URL, Date, TypeError, SyntaxError, AbortController, encodeURIComponent, setTimeout, clearTimeout });
+  const auth = { ready: Promise.resolve({ role: 'ADMIN' }), current: () => ({ role: 'ADMIN' }), headers: () => ({ 'X-CSRF-Token': 'fixture' }), handle: jest.fn(), onLost: jest.fn() };
+  vm.runInNewContext(script, { document: { getElementById: (id) => elements[id], createElement: element }, window: { addEventListener: jest.fn(), ADMIN_AUTH: auth }, navigator: { clipboard }, fetch, URL, Date, TypeError, SyntaxError, AbortController, encodeURIComponent, setTimeout, clearTimeout });
   await flush();
   return { elements, state, fetch, clipboard };
 }
@@ -37,7 +38,7 @@ it('creates chosen duration and renders locally generated QR with the exact acti
   await create(ui);
   const post = ui.fetch.mock.calls.find(([, options]) => options.method === 'POST');
   expect(JSON.parse(post[1].body)).toEqual({ durationMinutes: 60 });
-  expect(post[1].headers['X-Demo-Admin']).toBe('true');
+  expect(post[1].headers['X-CSRF-Token']).toBe('fixture');
   expect(ui.elements['activation-url'].value).toBe(ui.state.voucher.activationUrl);
   expect(decodeURIComponent(ui.elements['voucher-qr'].src.split(',')[1])).toBe(ui.state.voucher.qrSvg);
   expect(ui.elements['voucher-result'].hidden).toBe(false);
@@ -76,5 +77,5 @@ it.each([403, 500, 'network'])('management failure %s restores controls and hide
   await create(ui);
   expect(ui.elements['create-voucher'].disabled).toBe(false);
   expect(ui.elements['voucher-message'].textContent).not.toContain('SECRET');
-  if (status === 403) expect(ui.elements['voucher-message'].textContent).toContain('demo local');
+  if (status === 403) expect(ui.elements['voucher-message'].textContent).toContain('ADMIN');
 });

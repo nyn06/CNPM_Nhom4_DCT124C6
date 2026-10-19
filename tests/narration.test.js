@@ -1,4 +1,4 @@
-const request = require('./helpers/demo-request');
+const request = require('./helpers/auth-request');
 
 jest.mock('../src/integrations/tts/piperTts.provider', () => ({
   synthesize: jest.fn(),

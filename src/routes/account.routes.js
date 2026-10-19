@@ -1,0 +1,11 @@
+const express = require('express');
+const controller = require('../controllers/account.controller');
+const { requireAdmin, requireRoles } = require('../middlewares/requireAdmin');
+const csrf = require('../middlewares/csrf');
+const router = express.Router();
+router.use('/accounts', requireAdmin, requireRoles('ADMIN'), csrf());
+router.get('/accounts', controller.list);
+router.post('/accounts', controller.create);
+router.patch('/accounts/:id', controller.update);
+router.post('/accounts/:id/password', controller.resetPassword);
+module.exports = router;

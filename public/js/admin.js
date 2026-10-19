@@ -2,6 +2,7 @@
   'use strict';
 
   const byId = (id) => document.getElementById(id);
+  const auth = window.ADMIN_AUTH;
   const { sourceLanguage, names: languageNames } = window.POI_LANGUAGES;
   const languages = Object.keys(languageNames);
   const targets = languages.filter((language) => language !== sourceLanguage);
@@ -35,7 +36,9 @@
   }
 
   function apiError(statusCode, scope) {
-    if (statusCode === 404) return safeError('POI không còn tồn tại. Hãy tải lại danh sách và chọn địa điểm khác.', 404);
+    if (statusCode === 401) return safeError('Phiên quản trị đã hết hạn. Hãy đăng nhập lại.', 401);
+    if (statusCode === 403) return safeError('Bạn không có quyền thực hiện thao tác hoặc CSRF token đã thay đổi. Hãy tải lại trang.', 403);
+    if (statusCode === 404) return safeError('Địa điểm không còn tồn tại. Hãy tải lại danh sách và chọn địa điểm khác.', 404);
     if (statusCode === 409) return safeError('Nội dung đã thay đổi trong lúc xử lý. Hãy tải lại nội dung rồi thử lại.', 409);
     if (statusCode === 400) return safeError('Dữ liệu chưa hợp lệ. Kiểm tra các trường bắt buộc, tọa độ và nội dung tiếng Việt đã lưu.', 400);
     if (scope === 'translation') return safeError(statusCode === 504
@@ -50,11 +53,13 @@
     controllers.add(controller);
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
-      const response = await fetch(url, {
-        method, signal: controller.signal,
-        headers: { Accept: 'application/json', 'X-Demo-Admin': 'true', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+      const target = method === 'GET' && /^\/api\/pois(?:\/[^/]+)?$/.test(url) ? url.replace('/api/pois', '/api/admin/pois') : url;
+      const response = await fetch(target, {
+        method, signal: controller.signal, credentials: 'same-origin', cache: 'no-store',
+        headers: { Accept: 'application/json', ...auth.headers(method), ...(!['GET', 'HEAD'].includes(method) ? { 'Content-Type': 'application/json' } : {}) },
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       });
+      auth.handle(response);
       if (!response.ok) throw apiError(response.status, scope);
       if (response.status === 204) return null;
       try { return await response.json(); } catch { throw safeError('Phản hồi từ server không hợp lệ. Hãy tải lại và thử lại.'); }
@@ -171,7 +176,7 @@
       return { id: poi.id, element: row, manage, remove };
     });
     byId('poi-count').textContent = `${pois.length} địa điểm · ${pois.filter((poi) => poi.isActive).length} đang hoạt động`;
-    message('list-status', pois.length ? 'Chọn địa điểm để quản lý nội dung.' : 'Chưa có POI. Bấm “+ Thêm POI” để tạo địa điểm đầu tiên.');
+    message('list-status', pois.length ? 'Chọn địa điểm để quản lý nội dung.' : 'Chưa có địa điểm. Bấm “+ Thêm địa điểm” để tạo địa điểm đầu tiên.');
     markSelectedRow();
     updateControls();
   }
@@ -502,6 +507,11 @@
     for (const controller of controllers) controller.abort();
     stopPreview();
   });
+  auth.onLost(() => {
+    disposed = true;
+    for (const controller of controllers) controller.abort();
+    stopPreview();
+  });
   renderNarrations();
-  loadPois();
+  auth.ready.then((user) => { if (user && !disposed) loadPois(); });
 })();

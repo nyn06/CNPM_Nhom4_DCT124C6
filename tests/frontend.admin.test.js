@@ -47,6 +47,8 @@ async function setup({ pois = [{ ...basePoi, narrations: content() }] } = {}) {
   elements['content-panel'].hidden = true;
   const state = { pois: copy(pois), overrides: new Map(), audioVersion: 0 };
   const fetch = jest.fn(async (url, options) => {
+    // Existing content tests exercise transport under an established session.
+    url = url.replace('/api/admin/pois', '/api/pois');
     const key = `${options.method} ${url}`;
     if (state.overrides.has(key)) {
       const value = state.overrides.get(key);
@@ -88,6 +90,7 @@ async function setup({ pois = [{ ...basePoi, narrations: content() }] } = {}) {
     return json({ poiId: poi.id, language, text: narration.text, ...(narration.audioFile ? { audioFile: narration.audioFile, audioUrl: `/audio/${narration.audioFile}` } : {}) });
   });
   const window = { confirm: jest.fn(() => true), addEventListener: jest.fn() };
+  window.ADMIN_AUTH = { ready: Promise.resolve({ id: 'admin', role: 'ADMIN' }), headers: () => ({ 'X-CSRF-Token': 'fixture' }), handle: jest.fn(), onLost: jest.fn() };
   vm.runInNewContext(scripts, { document: { getElementById: (id) => elements[id] }, window, fetch, AbortController, setTimeout, clearTimeout });
   await flush();
   const cards = Object.fromEntries(codes.map((code, index) => [code, elements['language-cards'].children[index].parts]));
@@ -110,7 +113,7 @@ afterEach(() => { jest.useRealTimers(); });
 describe('Stage 7: danh sách và CRUD POI', () => {
   it('load danh sách API, render tên/loại/trạng thái, chưa gọi narration/TTS', async () => {
     const ui = await setup({ pois: [basePoi, { ...basePoi, id: 'poi-b', name: 'Điểm B', isActive: false }] });
-    expect(ui.fetch.mock.calls.map(([url]) => url)).toEqual(['/api/pois']);
+    expect(ui.fetch.mock.calls.map(([url]) => url)).toEqual(['/api/admin/pois']);
     const rows = ui.elements['poi-rows'].children;
     expect(rows).toHaveLength(2);
     expect(rows[0].parts['.row-name'].textContent).toBe(basePoi.name);
@@ -122,7 +125,7 @@ describe('Stage 7: danh sách và CRUD POI', () => {
 
   it('danh sách rỗng vẫn thêm POI được', async () => {
     const ui = await setup({ pois: [] });
-    expect(ui.elements['list-status'].textContent).toContain('Chưa có POI');
+    expect(ui.elements['list-status'].textContent).toContain('Chưa có địa điểm');
     click(ui.elements['new-poi']);
     expect(ui.elements['poi-panel'].hidden).toBe(false);
     expect(ui.elements['content-panel'].hidden).toBe(true);
@@ -134,7 +137,7 @@ describe('Stage 7: danh sách và CRUD POI', () => {
   it('chọn POI GET dữ liệu và narration, hiện đúng bốn ngôn ngữ', async () => {
     const ui = await setup();
     await select(ui);
-    expect(requests(ui, 'GET', '/api/pois/poi-a')).toHaveLength(1);
+    expect(requests(ui, 'GET', '/api/admin/pois/poi-a')).toHaveLength(1);
     expect(requests(ui, 'GET', '/api/pois/poi-a/narrations')).toHaveLength(1);
     expect(ui.elements['poi-name'].value).toBe(basePoi.name);
     expect(ui.elements['poi-latitude'].value).toBe('10');
@@ -196,6 +199,7 @@ describe('Stage 7: danh sách và CRUD POI', () => {
     click(ui.elements['delete-selected']);
     await flush();
     expect(requests(ui, 'DELETE', '/api/pois/poi-a')).toHaveLength(1);
+    expect(requests(ui, 'DELETE', '/api/pois/poi-a')[0][1].headers).toMatchObject({ 'Content-Type': 'application/json', 'X-CSRF-Token': 'fixture' });
     expect(ui.elements['poi-rows'].children).toHaveLength(0);
     expect(ui.elements['poi-panel'].hidden).toBe(true);
     expect(ui.elements['content-panel'].hidden).toBe(true);
@@ -304,7 +308,7 @@ describe('Stage 7: VI, translation và audio', () => {
       expect(requests(ui, 'GET', `/api/pois/poi-a/narrations/${code}`)).toHaveLength(2);
     }
     expect(ui.cards.vi['.listen-audio'].hidden).toBe(false);
-    expect(ui.fetch.mock.calls.every(([url]) => url.startsWith('/api/pois'))).toBe(true);
+    expect(ui.fetch.mock.calls.every(([url]) => url.startsWith('/api/pois') || url.startsWith('/api/admin/pois'))).toBe(true);
     expect(ui.audio.play).not.toHaveBeenCalled();
   });
 
@@ -314,6 +318,7 @@ describe('Stage 7: VI, translation và audio', () => {
     click(ui.cards[code]['.generate-audio']);
     await flush();
     expect(requests(ui, 'POST', `/api/pois/poi-a/narrations/${code}/audio`)).toHaveLength(1);
+    expect(requests(ui, 'POST', `/api/pois/poi-a/narrations/${code}/audio`)[0][1].headers).toMatchObject({ 'Content-Type': 'application/json', 'X-CSRF-Token': 'fixture' });
     expect(ui.cards[code]['.listen-audio'].hidden).toBe(false);
     expect(ui.cards[code]['.audio-status'].textContent).toContain('Có audio');
     expect(ui.audio.play).not.toHaveBeenCalled();
@@ -524,7 +529,7 @@ describe('Stage 7: lỗi, loading và điều phối request', () => {
     const delayed = pending();
     ui.state.overrides.set('GET /api/pois/poi-a', () => delayed.promise);
     click(ui.elements['poi-rows'].children[0].parts['.row-manage']);
-    const oldSignal = requests(ui, 'GET', '/api/pois/poi-a')[0][1].signal;
+    const oldSignal = requests(ui, 'GET', '/api/admin/pois/poi-a')[0][1].signal;
     await select(ui, 1);
     delayed.resolve(json({ ...basePoi, narrations: content() }));
     await flush();

@@ -2,6 +2,8 @@ const express = require('express');
 const jobController = require('../controllers/job.controller');
 
 const router = express.Router();
+const { requireAdmin, requireRoles } = require('../middlewares/requireAdmin');
+router.use('/jobs', requireAdmin, requireRoles('ADMIN', 'POI_MANAGER'), require('../middlewares/csrf')());
 
 // POST /api/jobs           -> tạo job thuyết minh mới
 router.post('/jobs', jobController.createJob);

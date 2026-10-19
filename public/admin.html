@@ -9,25 +9,29 @@
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/admin.css">
   <script src="/js/poi-languages.js" defer></script>
+  <script src="/js/admin-auth.js" defer></script>
   <script src="/js/admin.js" defer></script>
   <script src="/js/vouchers.js" defer></script>
+  <script src="/js/accounts.js" defer></script>
 </head>
 <body class="admin-page">
   <a class="skip-link" href="#admin-main">Đến nội dung quản lý</a>
   <header class="site-header">
     <div class="header-inner">
       <a class="brand" href="/admin.html">Vị Giác<span class="tag">QUẢN LÝ</span></a>
-      <a class="button secondary" href="/">Mở WebApp khách →</a>
+      <div class="admin-session"><span id="admin-identity" role="status">Đang kiểm tra phiên…</span><button id="admin-logout" class="button secondary" type="button">Đăng xuất</button><a class="button secondary" href="/">Mở WebApp khách →</a></div>
     </div>
   </header>
   <main id="admin-main" class="page admin-main">
+    <p id="admin-session-status" class="helper" role="status"></p>
+    <div id="admin-shell" hidden>
     <div class="admin-heading">
       <div><p class="eyebrow">ĐIỂM ĐẾN &amp; NỘI DUNG</p><h1>Quản lý điểm thuyết minh</h1><p class="helper">Tạo địa điểm, chuẩn bị nội dung và audio cho hành trình của khách.</p></div>
-      <button id="new-poi" type="button" class="button primary">+ Thêm POI</button>
+      <button id="new-poi" type="button" class="button primary">+ Thêm địa điểm</button>
     </div>
     <noscript><p class="notice" data-tone="error">Hãy bật JavaScript để sử dụng trang quản lý.</p></noscript>
-    <p class="notice" data-tone="info">Demo-only: quản trị chưa có xác thực, chỉ dùng trên máy local với DEMO_ADMIN_ENABLED=true. Không triển khai công khai. Vé QR chỉ mô phỏng cấp quyền sau mua vé, chưa có thanh toán thật.</p>
-    <section class="panel admin-panel voucher-panel" aria-labelledby="voucher-title">
+    <p class="notice" data-tone="info">Vé QR chỉ mô phỏng cấp quyền sau mua vé, chưa có thanh toán thật. Tài khoản, phiên và dữ liệu hiện được giữ trong bộ nhớ server.</p>
+    <section id="voucher-management" class="panel admin-panel voucher-panel" aria-labelledby="voucher-title" hidden>
       <div class="admin-section-heading"><h2 id="voucher-title">QUẢN LÝ VÉ QR</h2><button id="reload-vouchers" class="button secondary" type="button">Tải lại trạng thái</button></div>
       <form id="voucher-form" class="voucher-actions">
         <label for="voucher-duration">Thời hạn vé</label><select id="voucher-duration"><option value="15">15 phút</option><option value="60" selected>60 phút</option><option value="120">120 phút</option></select><button id="create-voucher" class="button primary" type="submit">Tạo voucher</button>
@@ -39,10 +43,10 @@
       </div>
       <ul id="voucher-list" class="voucher-list" aria-label="Trạng thái vé" aria-busy="false"></ul>
     </section>
-    <p id="action-status" class="admin-message" role="status" aria-live="polite">Chọn một địa điểm hoặc thêm POI mới để bắt đầu.</p>
+    <p id="action-status" class="admin-message" role="status" aria-live="polite">Chọn một địa điểm hoặc thêm địa điểm mới để bắt đầu.</p>
     <div class="admin-workspace">
       <section class="panel admin-list" aria-labelledby="list-title">
-        <div class="admin-section-heading"><h2 id="list-title">Danh sách POI</h2><button id="reload-pois" type="button" class="button secondary">Tải lại</button></div>
+        <div class="admin-section-heading"><h2 id="list-title">Danh sách địa điểm</h2><button id="reload-pois" type="button" class="button secondary">Tải lại</button></div>
         <p id="poi-count" class="helper"></p>
         <p id="list-status" class="helper" role="status"></p>
         <div class="admin-table-wrap">
@@ -57,7 +61,7 @@
       <div class="admin-editor">
         <p id="selection-status" class="notice" role="status">Chọn “Quản lý” trong danh sách để mở địa điểm.</p>
         <section id="poi-panel" class="panel admin-panel" hidden aria-labelledby="poi-form-title" aria-busy="false">
-          <div class="admin-section-heading"><div><p class="eyebrow">01 · ĐỊA ĐIỂM</p><h2 id="poi-form-title">Thông tin POI</h2></div><button id="cancel-edit" type="button" class="button secondary">Đóng</button></div>
+          <div class="admin-section-heading"><div><p class="eyebrow">01 · ĐỊA ĐIỂM</p><h2 id="poi-form-title">Thông tin địa điểm</h2></div><button id="cancel-edit" type="button" class="button secondary">Đóng</button></div>
           <p id="selected-id" class="helper"></p>
           <form id="poi-form" novalidate>
             <fieldset id="poi-fields" class="admin-fields">
@@ -94,7 +98,19 @@
         </section>
       </div>
     </div>
+    <section id="account-management" class="panel admin-panel account-panel" aria-labelledby="account-title" hidden>
+      <div class="admin-section-heading"><h2 id="account-title">Quản lý tài khoản</h2><button id="reload-accounts" type="button" class="button secondary">Tải lại tài khoản</button></div>
+      <form id="account-form" class="admin-form-grid">
+        <div><label for="account-username">Username mới</label><input id="account-username" autocomplete="off" minlength="3" maxlength="64" required></div>
+        <div><label for="account-password">Mật khẩu mới</label><input id="account-password" type="password" autocomplete="new-password" minlength="12" required></div>
+        <div><label for="account-role">Vai trò</label><select id="account-role"><option value="POI_MANAGER">POI_MANAGER</option><option value="ADMIN">ADMIN</option></select></div>
+        <button id="create-account" type="submit" class="button primary">Tạo tài khoản</button>
+      </form>
+      <p id="account-status" class="helper" role="status">Thay đổi quyền, trạng thái hoặc mật khẩu sẽ thu hồi các phiên của tài khoản đó.</p>
+      <div class="admin-table-wrap"><table class="admin-table account-table"><thead><tr><th>Username</th><th>Vai trò</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody id="account-rows"></tbody></table></div>
+    </section>
     <footer class="site-footer"><span>Vị Giác · Chuẩn bị mỗi điểm đến, kể mỗi câu chuyện.</span><span>Bản demo · Dữ liệu POI được giữ trong bộ nhớ khi server chạy.</span></footer>
+    </div>
   </main>
   <template id="poi-row-template">
     <tr><td><strong class="row-name"></strong><span class="row-category helper"></span></td><td><span class="row-active badge"></span></td><td><div class="row-actions"><button class="row-manage button secondary" type="button">Quản lý</button><button class="row-delete button danger" type="button">Xóa</button></div></td></tr>

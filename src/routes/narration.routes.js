@@ -2,8 +2,8 @@ const express = require('express');
 const narrationController = require('../controllers/narration.controller');
 
 const router = express.Router();
-// Legacy content/TTS endpoints are management APIs, not a tourist bypass.
-router.use('/narrations', require('../middlewares/demoAdmin'));
+const { requireAdmin, requireRoles } = require('../middlewares/requireAdmin');
+router.use('/narrations', requireAdmin, requireRoles('ADMIN', 'POI_MANAGER'), require('../middlewares/csrf')());
 
 router.post('/narrations', narrationController.createNarration);
 router.get('/narrations', narrationController.getNarrations);

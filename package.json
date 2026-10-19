@@ -10,7 +10,9 @@
     "lint": "eslint src public/js --ext .js"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
     "express": "^4.19.2",
     "qrcode": "^1.5.4",
     "uuid": "^9.0.1"

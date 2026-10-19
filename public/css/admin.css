@@ -1,4 +1,23 @@
 .admin-main { padding-top: 30px; }
+.admin-session { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12px; }
+.login-page { max-width: 520px; padding-top: 60px; }
+.login-page label { display: block; margin: 18px 0 6px; }
+.login-page button { margin-top: 18px; }
+.login-password-field { position: relative; }
+.login-password-field input { display: block; padding-right: 48px; }
+.login-password-field input::-ms-reveal { display: none; }
+.login-page .password-toggle { position: absolute; top: 0; right: 0; width: 44px; height: 100%; margin: 0; padding: 0; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: var(--muted); }
+.login-page .password-toggle:hover { background: #edf0e8; color: #4e5650; }
+.login-page .password-toggle:focus-visible { outline: 3px solid #c0683e; outline-offset: -4px; }
+.password-eye { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.password-toggle[aria-pressed="false"] .password-eye-off,
+.password-toggle[aria-pressed="true"] .password-eye-open { display: none; }
+.account-panel { margin-top: 24px; }
+#account-form { margin-top: 20px; align-items: end; }
+.account-table { min-width: 680px; }
+.account-table input[type="checkbox"] { width: 16px; min-height: 16px; }
+.account-table td:last-child { display: flex; gap: 8px; flex-wrap: wrap; }
+.account-table input[type="password"] { width: 190px; }
 .voucher-panel { margin-bottom: 24px; }
 .voucher-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 16px; }
 .voucher-actions .primary { flex: none; }

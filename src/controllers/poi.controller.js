@@ -48,7 +48,7 @@ class PoiController {
 
   getPoiNarration(req, res, next) {
     try {
-      poiService.checkNarrationAccess(req.params.id, req.demoAdmin);
+      poiService.checkNarrationAccess(req.params.id, !!req.admin);
       res.status(200).json(poiService.getPoiNarration(req.params.id, req.params.language));
     } catch (error) {
       next(error);
@@ -57,7 +57,7 @@ class PoiController {
 
   getPoiNarrations(req, res, next) {
     try {
-      poiService.checkNarrationAccess(req.params.id, req.demoAdmin);
+      poiService.checkNarrationAccess(req.params.id, !!req.admin);
       res.status(200).json(poiService.getPoiNarrations(req.params.id));
     } catch (error) {
       next(error);
@@ -90,6 +90,14 @@ class PoiController {
     } catch (error) {
       next(error);
     }
+  }
+
+  getAdminPois(req, res, next) {
+    try { res.json(poiService.getPois()); } catch (error) { next(error); }
+  }
+
+  getAdminPoi(req, res, next) {
+    try { res.json(poiService.getPoi(req.params.id)); } catch (error) { next(error); }
   }
 
   updatePoi(req, res, next) {

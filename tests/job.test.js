@@ -1,4 +1,4 @@
-const request = require('supertest');
+const request = require('./helpers/auth-request');
 const app = require('../src/app');
 const jobRepository = require('../src/repositories/job.repository');
 

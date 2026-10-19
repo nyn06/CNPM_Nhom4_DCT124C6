@@ -1,5 +1,6 @@
 jest.mock('../src/integrations/tts/piperTts.provider', () => ({ synthesize: jest.fn() }));
 const request = require('supertest');
+const adminRequest = require('./helpers/auth-request');
 const fs = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
@@ -126,28 +127,29 @@ it('public POI listing/detail/nearby cannot leak narration through alternate rea
   }
 });
 
-it('Admin generates and previews audio locally without a tourist voucher', async () => {
-  await request(app).post(`/api/pois/${poi.id}/narrations/vi/audio`).expect(200);
+it('authenticated Admin generates and previews audio without a tourist voucher', async () => {
+  await adminRequest(app).post(`/api/pois/${poi.id}/narrations/vi/audio`).expect(200);
   expect(piper.synthesize).toHaveBeenCalledWith('Protected narration', 'vi');
-  await request(app).get(`/api/pois/${poi.id}/narrations/vi`).set('X-Demo-Admin', 'true').expect(200);
-  await request(app).get(`/api/admin/audio/${filename}`).expect(200).expect('Content-Type', /audio\/wav/);
+  await adminRequest(app).get(`/api/pois/${poi.id}/narrations/vi`).expect(200);
+  await adminRequest(app).get(`/api/admin/audio/${filename}`).expect(200).expect('Content-Type', /audio\/wav/);
 });
 
 it.each(['production', 'development'])('disabled-by-default admin in %s cannot grant vouchers or expose legacy content', async (env) => {
   process.env.NODE_ENV = env;
   delete process.env.DEMO_ADMIN_ENABLED;
-  for (const url of ['/api/access/vouchers', '/api/narrations', '/admin.html', `/api/admin/audio/${filename}`]) {
-    await request(app).get(url).expect(403);
+  for (const url of ['/api/access/vouchers', '/api/narrations', `/api/admin/audio/${filename}`]) {
+    await request(app).get(url).expect(401);
   }
-  await request(app).post('/api/access/vouchers').send({ durationMinutes: 60 }).expect(403);
-  await request(app).post(`/api/pois/${poi.id}/narrations/vi/audio`).expect(403);
+  await request(app).get('/admin.html').expect(302).expect('Location', '/admin-login.html');
+  await request(app).post('/api/access/vouchers').send({ durationMinutes: 60 }).expect(401);
+  await request(app).post(`/api/pois/${poi.id}/narrations/vi/audio`).expect(401);
   expect(piper.synthesize).not.toHaveBeenCalled();
 });
 
 it('production rejects management even with demo flag, forged admin header or valid tourist token', async () => {
   process.env.NODE_ENV = 'production';
-  await request(app).post('/api/access/vouchers').set('X-Demo-Admin', 'true').set('Authorization', `Bearer ${token}`).send({ durationMinutes: 60 }).expect(403);
-  await request(app).get(`/api/pois/${poi.id}/narrations/vi`).set('X-Demo-Admin', 'true').expect(403);
+  await request(app).post('/api/access/vouchers').set('X-Demo-Admin', 'true').set('Authorization', `Bearer ${token}`).send({ durationMinutes: 60 }).expect(401);
+  await request(app).get(`/api/pois/${poi.id}/narrations/vi`).set('X-Demo-Admin', 'true').expect(401);
   await authorized(`/api/pois/${poi.id}/narrations/vi`).expect(200);
   await request(app).get('/health').expect(200);
 });
@@ -155,17 +157,17 @@ it('production rejects management even with demo flag, forged admin header or va
 it.each([
   ['Host', 'public.example.test'], ['Origin', 'https://attacker.test'], ['Sec-Fetch-Site', 'cross-site'],
   ['X-Forwarded-For', '127.0.0.1'], ['X-Forwarded-Host', 'localhost'], ['Forwarded', 'for=127.0.0.1'],
-])('demo management rejects %s=%s', async (header, value) => {
-  await request(app).post('/api/access/vouchers').set(header, value).send({ durationMinutes: 60 }).expect(403);
+])('headers %s=%s cannot substitute for authentication', async (header, value) => {
+  await request(app).post('/api/access/vouchers').set(header, value).send({ durationMinutes: 60 }).expect(401);
 });
 
 it('remote socket cannot become local by spoofing Host or headers', () => {
   const req = { protocol: 'http', socket: { remoteAddress: '203.0.113.1' }, headers: { host: 'localhost' }, get: (name) => name === 'host' ? 'localhost' : undefined };
-  const res = { status: jest.fn().mockReturnThis(), json: jest.fn(), set: jest.fn() };
+  const res = { status: jest.fn().mockReturnThis(), json: jest.fn(), set: jest.fn(), clearCookie: jest.fn() };
   const next = jest.fn();
   demoAdmin(req, res, next);
-  expect(res.status).toHaveBeenCalledWith(403);
-  expect(next).not.toHaveBeenCalled();
+  expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 401 }));
+  expect(req.admin).toBeUndefined();
 });
 
 it('query tokens are never accepted, errors contain no token/path/stack', async () => {

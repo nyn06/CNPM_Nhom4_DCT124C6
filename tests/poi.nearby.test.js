@@ -1,4 +1,4 @@
-const request = require('./helpers/demo-request');
+const request = require('./helpers/auth-request');
 const app = require('../src/app');
 const poiRepository = require('../src/repositories/poi.repository');
 const { calculateDistanceInMeters } = require('../src/utils/geo');

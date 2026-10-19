@@ -1,5 +1,7 @@
 const accessService = require('../services/access.service');
-const demoAdmin = require('./demoAdmin');
+const { requireAdmin, requireRoles } = require('./requireAdmin');
+const { cookie } = require('../utils/authHttp');
+const { SESSION_COOKIE } = require('../config/auth');
 
 function requireAccess(req, res, next) {
   try {
@@ -9,11 +11,15 @@ function requireAccess(req, res, next) {
   } catch (error) { next(error); }
 }
 
-// Existing narration endpoints also serve the local Stage 7 editor. This
-// explicit header is only a routing hint; demoAdmin still verifies the boundary.
+// Shared read endpoint: explicit tourist Bearer token remains independent of
+// the admin cookie. X-Demo-Admin never grants access.
 function narrationAccess(req, res, next) {
-  if (req.get('x-demo-admin') === 'true') return demoAdmin(req, res, next);
-  requireAccess(req, res, next);
+  try {
+    if (!req.get('authorization') && cookie(req, SESSION_COOKIE)) {
+      return requireAdmin(req, res, (error) => error ? next(error) : requireRoles('ADMIN', 'POI_MANAGER')(req, res, next));
+    }
+    requireAccess(req, res, next);
+  } catch (error) { next(error); }
 }
 
 module.exports = { requireAccess, narrationAccess };

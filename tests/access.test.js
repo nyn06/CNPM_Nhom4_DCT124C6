@@ -1,4 +1,4 @@
-const request = require('supertest');
+const request = require('./helpers/auth-request');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const app = require('../src/app');
@@ -12,7 +12,6 @@ const session = (token) => request(app).get('/api/access/session').set('Authoriz
 
 beforeEach(() => {
   repository.clear();
-  process.env.DEMO_ADMIN_ENABLED = 'true';
   process.env.NODE_ENV = 'test';
   delete process.env.PUBLIC_ORIGIN;
 });

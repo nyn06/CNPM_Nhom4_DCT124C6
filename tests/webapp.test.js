@@ -1,4 +1,4 @@
-const request = require('./helpers/demo-request');
+const request = require('./helpers/auth-request');
 const app = require('../src/app');
 
 describe('WebApp static cùng origin với API', () => {

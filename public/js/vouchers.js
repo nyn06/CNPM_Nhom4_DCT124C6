@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   const byId = (id) => document.getElementById(id);
+  const auth = window.ADMIN_AUTH;
   let busy = false;
   let disposed = false;
   let controller = null;
@@ -15,12 +16,13 @@
     const timer = setTimeout(() => current.abort(), 10000);
     try {
       const response = await fetch('/api/access/vouchers', {
-        method, signal: current.signal, cache: 'no-store',
-        headers: { Accept: 'application/json', 'X-Demo-Admin': 'true', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        method, signal: current.signal, cache: 'no-store', credentials: 'same-origin',
+        headers: { Accept: 'application/json', ...auth.headers(method), ...(body ? { 'Content-Type': 'application/json' } : {}) },
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
-      if (!response.ok) throw new Error(response.status === 403
-        ? 'Quản lý vé chỉ dùng trong demo local. Cần bật DEMO_ADMIN_ENABLED=true; production luôn bị chặn.'
+      auth.handle(response);
+      if (!response.ok) throw new Error(response.status === 401 ? 'Phiên quản trị đã hết hạn. Hãy đăng nhập lại.' : response.status === 403
+        ? 'Chỉ ADMIN được quản lý voucher; hãy kiểm tra quyền hoặc tải lại trang.'
         : 'Không xử lý được vé. Kiểm tra thời hạn và PUBLIC_ORIGIN rồi thử lại.');
       return await response.json();
     } catch (error) {
@@ -41,7 +43,7 @@
     }));
   }
   async function work(create = false) {
-    if (busy || disposed) return;
+    if (busy || disposed || auth.current()?.role !== 'ADMIN') return;
     busy = true;
     byId('create-voucher').disabled = true;
     byId('reload-vouchers').disabled = true;
@@ -78,5 +80,6 @@
     catch { message('Không sao chép tự động được. Hãy chọn và sao chép URL trong ô phía trên.', 'info'); }
   });
   window.addEventListener('pagehide', () => { disposed = true; if (controller) controller.abort(); });
-  work();
+  auth.onLost(() => { disposed = true; controller?.abort(); byId('voucher-result').hidden = true; byId('activation-url').value = ''; byId('voucher-qr').removeAttribute('src'); });
+  auth.ready.then((user) => { if (user?.role === 'ADMIN') work(); });
 })();
