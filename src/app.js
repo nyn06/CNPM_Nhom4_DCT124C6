@@ -11,6 +11,7 @@ const authRoutes = require('./routes/auth.routes');
 const accountRoutes = require('./routes/account.routes');
 const { requireAccess } = require('./middlewares/requireAccess');
 const serveAudio = require('./controllers/audio.controller');
+const sqlRuntime = process.env.NODE_ENV !== 'test' || process.env.DB_INTEGRATION === '1';
 
 const app = express();
 
@@ -25,7 +26,14 @@ app.use((req, res, next) => {
 app.use('/audio', requireAccess, serveAudio);
 app.use('/api/admin/audio', requireAdmin, requireRoles('ADMIN', 'POI_MANAGER'), serveAudio);
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/health', async (req, res) => {
+  if (!sqlRuntime) return res.json({ status: 'ok' });
+  try {
+    const { getPool } = require('./database/connection');
+    await (await getPool()).request().query('SELECT 1');
+    return res.json({ status: 'ok' });
+  } catch { return res.status(503).json({ status: 'unavailable' }); }
+});
 
 app.use('/api', jobRoutes);
 app.use('/api', narrationRoutes);

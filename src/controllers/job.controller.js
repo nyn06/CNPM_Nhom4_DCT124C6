@@ -8,28 +8,28 @@
 const jobService = require('../services/job.service');
 
 class JobController {
-  createJob(req, res, next) {
+  async createJob(req, res, next) {
     try {
       const { fileName, targetLang } = req.body;
-      const job = jobService.createJob({ fileName, targetLang });
+      const job = await jobService.createJob({ fileName, targetLang });
       res.status(201).json(job);
     } catch (err) {
       next(err);
     }
   }
 
-  getJob(req, res, next) {
+  async getJob(req, res, next) {
     try {
-      const job = jobService.getJob(req.params.id);
+      const job = await jobService.getJob(req.params.id);
       res.status(200).json(job);
     } catch (err) {
       next(err);
     }
   }
 
-  listJobs(req, res, next) {
+  async listJobs(req, res, next) {
     try {
-      const jobs = jobService.listJobs();
+      const jobs = await jobService.listJobs();
       res.status(200).json(jobs);
     } catch (err) {
       next(err);

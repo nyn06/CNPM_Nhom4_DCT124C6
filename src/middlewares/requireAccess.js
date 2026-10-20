@@ -3,9 +3,9 @@ const { requireAdmin, requireRoles } = require('./requireAdmin');
 const { cookie } = require('../utils/authHttp');
 const { SESSION_COOKIE } = require('../config/auth');
 
-function requireAccess(req, res, next) {
+async function requireAccess(req, res, next) {
   try {
-    req.accessSession = accessService.validateAuthorization(req.get('authorization'));
+    req.accessSession = await accessService.validateAuthorization(req.get('authorization'));
     res.set('Cache-Control', 'no-store');
     next();
   } catch (error) { next(error); }

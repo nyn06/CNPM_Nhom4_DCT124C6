@@ -6,6 +6,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY src ./src
+COPY database ./database
 COPY public/index.html ./public/index.html
 COPY public/admin.html public/admin-login.html ./public/
 COPY public/css ./public/css

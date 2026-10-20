@@ -13,8 +13,8 @@ async function serveAudio(req, res, next) {
     const filename = decodeURIComponent(req.path.slice(1));
     const file = await audioService.resolveAudio(filename, !!req.admin);
     // Recheck after filesystem await, so expiration during lookup is rejected.
-    if (req.admin) authService.authenticate(cookie(req, SESSION_COOKIE));
-    else accessService.validateAuthorization(req.get('authorization'));
+    if (req.admin) await authService.authenticate(cookie(req, SESSION_COOKIE));
+    else await accessService.validateAuthorization(req.get('authorization'));
     res.type('audio/wav');
     res.set('Cache-Control', 'no-store');
     res.sendFile(file, { cacheControl: false, lastModified: false }, (error) => {

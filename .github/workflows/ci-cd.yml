@@ -37,10 +37,47 @@ jobs:
       - name: Chạy unit test
         run: npm test
 
+  database-integration:
+    name: SQL Server integration
+    runs-on: ubuntu-latest
+    env:
+      DB_HOST: localhost
+      DB_PORT: '14333'
+      DB_NAME: AutoNarrationTest
+      DB_USER: sa
+      DB_ENCRYPT: 'true'
+      DB_TRUST_SERVER_CERTIFICATE: 'true'
+      DB_INTEGRATION: '1'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Cài đặt Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: 'npm'
+      - name: Cài dependencies
+        run: npm ci
+      - name: Start isolated SQL Server
+        shell: bash
+        run: |
+          password="$(openssl rand -hex 24)Aa1!"
+          echo "::add-mask::$password"
+          echo "DB_PASSWORD=$password" >> "$GITHUB_ENV"
+          docker run -d --name sqlserver-test -e ACCEPT_EULA=Y -e MSSQL_PID=Developer \
+            -e MSSQL_SA_PASSWORD="$password" -p 127.0.0.1:14333:1433 \
+            mcr.microsoft.com/mssql/server:2022-latest
+      - name: Wait for SQL Server
+        run: node database/wait.js
+      - name: Run migrations
+        run: npm run db:migrate
+      - name: Run database integration tests
+        run: npm run test:db
+
   # ---------- CONTINUOUS DEPLOYMENT ----------
   deploy:
     name: Deploy
-    needs: build-and-test
+    needs: [build-and-test, database-integration]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
 

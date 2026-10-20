@@ -16,9 +16,9 @@ class NarrationController {
     }
   }
 
-  getNarrations(req, res, next) {
+  async getNarrations(req, res, next) {
     try {
-      const narrations = narrationService.getNarrations();
+      const narrations = await narrationService.getNarrations();
 
       res.status(200).json(narrations);
     } catch (error) {
@@ -26,9 +26,9 @@ class NarrationController {
     }
   }
 
-  getNarration(req, res, next) {
+  async getNarration(req, res, next) {
     try {
-      const narration = narrationService.getNarration(req.params.id);
+      const narration = await narrationService.getNarration(req.params.id);
 
       res.status(200).json(narration);
     } catch (error) {

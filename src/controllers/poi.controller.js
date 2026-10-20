@@ -7,9 +7,9 @@ const publicPoi = (poi) => {
 };
 
 class PoiController {
-  createPoi(req, res, next) {
+  async createPoi(req, res, next) {
     try {
-      const poi = poiService.createPoi(req.body);
+      const poi = await poiService.createPoi(req.body);
 
       res.status(201).json(poi);
     } catch (error) {
@@ -17,9 +17,9 @@ class PoiController {
     }
   }
 
-  getPois(req, res, next) {
+  async getPois(req, res, next) {
     try {
-      const pois = poiService.getPois();
+      const pois = await poiService.getPois();
 
       res.status(200).json(pois.map(publicPoi));
     } catch (error) {
@@ -27,10 +27,10 @@ class PoiController {
     }
   }
 
-  getNearbyPois(req, res, next) {
+  async getNearbyPois(req, res, next) {
     try {
       const { lat, lng } = req.query;
-      const result = poiService.getNearbyPois({ lat, lng });
+      const result = await poiService.getNearbyPois({ lat, lng });
 
       res.status(200).json({ ...result, pois: result.pois.map(publicPoi), nearestPoi: publicPoi(result.nearestPoi) });
     } catch (error) {
@@ -38,27 +38,27 @@ class PoiController {
     }
   }
 
-  setVietnameseNarration(req, res, next) {
+  async setVietnameseNarration(req, res, next) {
     try {
-      res.status(200).json(poiService.setVietnameseNarration(req.params.id, req.body));
+      res.status(200).json(await poiService.setVietnameseNarration(req.params.id, req.body));
     } catch (error) {
       next(error);
     }
   }
 
-  getPoiNarration(req, res, next) {
+  async getPoiNarration(req, res, next) {
     try {
-      poiService.checkNarrationAccess(req.params.id, !!req.admin);
-      res.status(200).json(poiService.getPoiNarration(req.params.id, req.params.language));
+      await poiService.checkNarrationAccess(req.params.id, !!req.admin);
+      res.status(200).json(await poiService.getPoiNarration(req.params.id, req.params.language));
     } catch (error) {
       next(error);
     }
   }
 
-  getPoiNarrations(req, res, next) {
+  async getPoiNarrations(req, res, next) {
     try {
-      poiService.checkNarrationAccess(req.params.id, !!req.admin);
-      res.status(200).json(poiService.getPoiNarrations(req.params.id));
+      await poiService.checkNarrationAccess(req.params.id, !!req.admin);
+      res.status(200).json(await poiService.getPoiNarrations(req.params.id));
     } catch (error) {
       next(error);
     }
@@ -82,9 +82,9 @@ class PoiController {
     }
   }
 
-  getPoi(req, res, next) {
+  async getPoi(req, res, next) {
     try {
-      const poi = poiService.getPoi(req.params.id);
+      const poi = await poiService.getPoi(req.params.id);
 
       res.status(200).json(publicPoi(poi));
     } catch (error) {
@@ -92,17 +92,17 @@ class PoiController {
     }
   }
 
-  getAdminPois(req, res, next) {
-    try { res.json(poiService.getPois()); } catch (error) { next(error); }
+  async getAdminPois(req, res, next) {
+    try { res.json(await poiService.getPois()); } catch (error) { next(error); }
   }
 
-  getAdminPoi(req, res, next) {
-    try { res.json(poiService.getPoi(req.params.id)); } catch (error) { next(error); }
+  async getAdminPoi(req, res, next) {
+    try { res.json(await poiService.getPoi(req.params.id)); } catch (error) { next(error); }
   }
 
-  updatePoi(req, res, next) {
+  async updatePoi(req, res, next) {
     try {
-      const poi = poiService.updatePoi(req.params.id, req.body);
+      const poi = await poiService.updatePoi(req.params.id, req.body);
 
       res.status(200).json(poi);
     } catch (error) {
@@ -110,9 +110,9 @@ class PoiController {
     }
   }
 
-  deletePoi(req, res, next) {
+  async deletePoi(req, res, next) {
     try {
-      poiService.deletePoi(req.params.id);
+      await poiService.deletePoi(req.params.id);
 
       res.status(204).end();
     } catch (error) {
