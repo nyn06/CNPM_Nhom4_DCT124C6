@@ -1,5 +1,5 @@
 const { sql, getPool, request, iso, uuid } = require('../../database/repository');
-const mapVoucher = (r) => r && ({ id: uuid(r.Id), codeHash: r.CodeHash, durationMinutes: r.DurationMinutes,
+const mapVoucher = (r) => r && ({ id: uuid(r.Id), codeHash: r.CodeHash, shortCodeHash: r.ShortCodeHash, durationMinutes: r.DurationMinutes,
   status: r.Status, createdAt: iso(r.CreatedAt), redeemedAt: iso(r.RedeemedAt),
   expiresAt: iso(r.ExpiresAt), sessionId: uuid(r.SessionId) });
 const mapSession = (r) => r && ({ id: uuid(r.Id), tokenHash: r.TokenHash, voucherId: uuid(r.VoucherId),
@@ -8,9 +8,9 @@ const mapSession = (r) => r && ({ id: uuid(r.Id), tokenHash: r.TokenHash, vouche
 class SqlAccessRepository {
   async createVoucher(voucher) {
     try {
-      await request(await getPool(), voucher).query(`INSERT dbo.Vouchers
-        (Id, CodeHash, DurationMinutes, Status, CreatedAt)
-        VALUES (TRY_CONVERT(uniqueidentifier, @id), @codeHash, @durationMinutes, @status, @createdAt)`);
+      await request(await getPool(), { ...voucher, shortCodeHash: voucher.shortCodeHash || null }).query(`INSERT dbo.Vouchers
+        (Id, CodeHash, ShortCodeHash, DurationMinutes, Status, CreatedAt)
+        VALUES (TRY_CONVERT(uniqueidentifier, @id), @codeHash, @shortCodeHash, @durationMinutes, @status, @createdAt)`);
       return { ...voucher, id: uuid(voucher.id), sessionId: uuid(voucher.sessionId) };
     } catch (cause) {
       if ([2601, 2627].includes(cause.number)) return null;
@@ -25,7 +25,7 @@ class SqlAccessRepository {
     await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
     try {
       const voucher = mapVoucher((await request(tx, { codeHash }).query(
-        'SELECT * FROM dbo.Vouchers WITH (UPDLOCK, HOLDLOCK) WHERE CodeHash=@codeHash')).recordset[0]);
+        'SELECT * FROM dbo.Vouchers WITH (UPDLOCK, HOLDLOCK) WHERE CodeHash=@codeHash OR ShortCodeHash=@codeHash')).recordset[0]);
       if (!voucher || voucher.status !== 'unused') {
         await tx.rollback();
         return { failure: voucher ? 'used' : 'invalid' };
@@ -35,10 +35,10 @@ class SqlAccessRepository {
         (Id, TokenHash, VoucherId, DurationMinutes, StartedAt, ExpiresAt, RevokedAt)
         VALUES (TRY_CONVERT(uniqueidentifier, @id), @tokenHash, TRY_CONVERT(uniqueidentifier, @voucherId),
         @durationMinutes, @startedAt, @expiresAt, @revokedAt)`);
-      const result = await request(tx, { codeHash, sessionId: session.id, redeemedAt: session.startedAt, expiresAt: session.expiresAt })
+      const result = await request(tx, { voucherId: voucher.id, sessionId: session.id, redeemedAt: session.startedAt, expiresAt: session.expiresAt })
         .query(`UPDATE dbo.Vouchers SET Status='redeemed', RedeemedAt=@redeemedAt,
           ExpiresAt=@expiresAt, SessionId=TRY_CONVERT(uniqueidentifier, @sessionId)
-          WHERE CodeHash=@codeHash AND Status='unused'`);
+          WHERE Id=TRY_CONVERT(uniqueidentifier, @voucherId) AND Status='unused'`);
       if (result.rowsAffected[0] !== 1) throw new Error('Voucher redemption conflict');
       await tx.commit();
       return { session: { ...session, id: uuid(session.id), voucherId: uuid(session.voucherId) }, accessToken };

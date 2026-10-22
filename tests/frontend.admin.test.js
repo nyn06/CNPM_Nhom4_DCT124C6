@@ -4,6 +4,7 @@ const vm = require('vm');
 
 const html = fs.readFileSync(path.join(__dirname, '../public/admin.html'), 'utf8');
 const scripts = ['poi-languages.js', 'admin.js'].map((file) => fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8')).join('\n');
+const mapScript = fs.readFileSync(path.join(__dirname, '../public/js/admin-poi-map.js'), 'utf8');
 const codes = ['vi', 'en', 'ja', 'ko'];
 const texts = { vi: 'Phở Việt Nam.', en: 'English fixture.', ja: '日本語のテスト。', ko: '한국어 테스트.' };
 const basePoi = { id: 'poi-a', name: 'Phở Việt Nam', description: 'Mô tả địa điểm', category: 'food', address: 'TP. Hồ Chí Minh', latitude: 10, longitude: 106, geofenceRadius: 50, isActive: true, createdAt: 'v1', updatedAt: 'v1' };
@@ -42,7 +43,7 @@ function template(selectors) {
 async function setup({ pois = [{ ...basePoi, narrations: content() }] } = {}) {
   const elements = Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => [match[1], element()]));
   elements['poi-row-template'] = template(['.row-name', '.row-category', '.row-active', '.row-manage', '.row-delete']);
-  elements['language-template'] = template(['.language-name', '.language-text', '.text-status', '.audio-status', '.generate-audio', '.listen-audio']);
+  elements['language-template'] = template(['.language-name', '.language-text', '.text-status', '.audio-status', '.listen-audio']);
   elements['poi-panel'].hidden = true;
   elements['content-panel'].hidden = true;
   const state = { pois: copy(pois), overrides: new Map(), audioVersion: 0 };
@@ -76,7 +77,7 @@ async function setup({ pois = [{ ...basePoi, narrations: content() }] } = {}) {
     if (suffix === '/narrations') return json({ poiId: poi.id, narrations: poi.narrations || {} });
     if (suffix === '/translations') {
       for (const code of body.targetLanguages) poi.narrations[code] = { text: `Translated ${code}` };
-      return json({ poiId: poi.id, sourceLanguage: 'vi', translations: {} });
+      return json({ poiId: poi.id, sourceLanguage: 'vi', translations: Object.fromEntries(body.targetLanguages.map((code) => [code, poi.narrations[code]])) });
     }
     const language = suffix.split('/')[2];
     if (options.method === 'PUT') {
@@ -89,19 +90,25 @@ async function setup({ pois = [{ ...basePoi, narrations: content() }] } = {}) {
     if (options.method === 'POST') narration.audioFile = `generated_${language}_${++state.audioVersion}.wav`;
     return json({ poiId: poi.id, language, text: narration.text, ...(narration.audioFile ? { audioFile: narration.audioFile, audioUrl: `/audio/${narration.audioFile}` } : {}) });
   });
-  const window = { confirm: jest.fn(() => true), addEventListener: jest.fn() };
+  const mapState = { point: null };
+  const window = { confirm: jest.fn(() => true), addEventListener: jest.fn(), ADMIN_POI_MAP: {
+    clear: () => { mapState.point = null; },
+    load: (poi) => { mapState.point = poi ? { latitude: poi.latitude, longitude: poi.longitude } : null; },
+    location: () => mapState.point,
+    confirm: (latitude, longitude) => { mapState.point = { latitude, longitude }; },
+  } };
   window.ADMIN_AUTH = { ready: Promise.resolve({ id: 'admin', role: 'ADMIN' }), headers: () => ({ 'X-CSRF-Token': 'fixture' }), handle: jest.fn(), onLost: jest.fn() };
   vm.runInNewContext(scripts, { document: { getElementById: (id) => elements[id] }, window, fetch, AbortController, setTimeout, clearTimeout });
   await flush();
   const cards = Object.fromEntries(codes.map((code, index) => [code, elements['language-cards'].children[index].parts]));
-  return { elements, state, fetch, window, cards, audio: elements['preview-audio'] };
+  return { elements, state, fetch, window, cards, audio: elements['preview-audio'], map: window.ADMIN_POI_MAP };
 }
 const requests = (ui, method, url) => ui.fetch.mock.calls.filter(([actualUrl, options]) => options.method === method && (!url || actualUrl === url));
 const click = (node) => node.events.click();
 const submit = (node) => node.events.submit({ preventDefault: jest.fn() });
 async function select(ui, index = 0) { click(ui.elements['poi-rows'].children[index].parts['.row-manage']); await flush(); }
 function fill(ui, changes = {}) {
-  const values = { name: 'Tên mới', description: 'Mô tả mới', category: 'cafe', address: '', latitude: '0', longitude: '0', radius: '75', ...changes };
+  const values = { name: 'Tên mới', description: 'Mô tả mới', category: 'cafe', 'street-address': '', ward: '', city: '', radius: '75', ...changes };
   for (const [field, value] of Object.entries(values)) ui.elements[`poi-${field}`].value = value;
   ui.elements['poi-active'].checked = false;
 }
@@ -109,6 +116,104 @@ function editVi(ui, text) { ui.elements['vi-text'].value = text; ui.elements['vi
 
 beforeEach(() => { jest.useFakeTimers(); });
 afterEach(() => { jest.useRealTimers(); });
+
+test('Admin HTML nạp bản đồ trước handler và có đầy đủ điều khiển POI', () => {
+  const order = ['/js/admin-auth.js', '/leaflet/leaflet.js', '/js/admin-poi-map.js', '/js/admin.js'];
+  expect(order.every((script) => html.includes(`src="${script}"`))).toBe(true);
+  expect(order.map((script) => html.indexOf(`src="${script}"`))).toEqual([...order.map((script) => html.indexOf(`src="${script}"`))].sort((a, b) => a - b));
+  for (const id of ['poi-legacy-address', 'poi-street-address', 'poi-ward', 'poi-city', 'poi-radius',
+    'poi-active', 'poi-suggestions', 'poi-suggestion-status', 'poi-search-address',
+    'poi-confirm-location', 'poi-search-results', 'poi-location-status', 'poi-admin-map']) {
+    expect(html).toContain(`id="${id}"`);
+  }
+  expect(html).toContain('/leaflet/leaflet.css');
+  expect(mapScript).toContain('window.ADMIN_POI_MAP =');
+});
+
+test('nút thêm địa điểm xuất hiện một lần, ngay trên danh sách', () => {
+  expect(html.match(/id="new-poi"/g)).toHaveLength(1);
+  expect(html.indexOf('class="admin-list-actions"')).toBeGreaterThan(html.indexOf('id="action-status"'));
+  expect(html.indexOf('id="new-poi"')).toBeGreaterThan(html.indexOf('class="admin-list-actions"'));
+  expect(html.indexOf('id="new-poi"')).toBeLessThan(html.indexOf('class="admin-workspace"'));
+  expect(html).not.toContain('Nhập địa chỉ, đặt ghim và xác nhận vị trí của địa điểm mới.');
+});
+
+test('khung thông báo POI ẩn khi chưa có nội dung và hiện khi thao tác', async () => {
+  expect(html).not.toContain('Chọn một địa điểm hoặc thêm địa điểm mới để bắt đầu.');
+  expect(html).toMatch(/id="action-status"[^>]*hidden/);
+  const ui = await setup();
+  click(ui.elements['new-poi']);
+  expect(ui.elements['action-status'].hidden).toBe(false);
+  expect(ui.elements['action-status'].textContent).toContain('Đang thêm địa điểm');
+});
+
+test('một nút tạo audio đứng sau nút dịch; card chỉ còn nút nghe', () => {
+  expect(html.match(/id="generate-all-audio"/g)).toHaveLength(1);
+  expect(html.indexOf('id="save-vi"')).toBeLessThan(html.indexOf('id="translate"'));
+  expect(html.indexOf('id="translate"')).toBeLessThan(html.indexOf('id="generate-all-audio"'));
+  expect(html).not.toContain('class="generate-audio');
+});
+
+test('thông báo nội dung nằm sau hàng nút và trước các thẻ ngôn ngữ', () => {
+  expect(html.indexOf('id="generate-all-audio"')).toBeLessThan(html.indexOf('id="content-action-notice"'));
+  expect(html.indexOf('id="content-action-notice"')).toBeLessThan(html.indexOf('id="language-cards"'));
+  expect(html).toMatch(/id="content-action-notice"[^>]*role="status"[^>]*aria-live="polite"[^>]*hidden/);
+});
+
+test('lưu VI báo thành công tại chỗ, tự ẩn sau 5 giây và không báo ở đầu trang', async () => {
+  const ui = await setup(); await select(ui);
+  editVi(ui, 'Nội dung VI mới');
+  submit(ui.elements['vi-form']);
+  await flush();
+  expect(ui.elements['content-action-text'].textContent).toBe('Đã lưu nội dung tiếng Việt thành công.');
+  expect(ui.elements['content-action-notice'].hidden).toBe(false);
+  expect(ui.elements['content-action-notice'].attributes.role).toBe('status');
+  expect(ui.elements['action-status'].textContent).toBe('');
+  await jest.advanceTimersByTimeAsync(4999);
+  expect(ui.elements['content-action-notice'].hidden).toBe(false);
+  await jest.advanceTimersByTimeAsync(1);
+  expect(ui.elements['content-action-notice'].hidden).toBe(true);
+});
+
+test('dịch và audio chỉ báo thành công sau phản hồi backend đầy đủ', async () => {
+  const ui = await setup(); await select(ui);
+  click(ui.elements.translate); await flush();
+  expect(ui.elements['content-action-text'].textContent).toBe('Đã dịch và tải nội dung EN/JA/KO thành công.');
+  expect(ui.elements['action-status'].textContent).toBe('');
+  click(ui.elements['generate-all-audio']); await flush();
+  expect(ui.elements['content-action-text'].textContent).toBe('Đã tạo audio 4 ngôn ngữ thành công.');
+  expect(ui.elements['action-status'].textContent).toBe('');
+});
+
+test('phản hồi dịch thiếu ngôn ngữ không báo thành công toàn bộ', async () => {
+  const ui = await setup(); await select(ui);
+  ui.state.overrides.set('POST /api/pois/poi-a/translations', json({ poiId: 'poi-a', translations: { en: { text: texts.en } } }));
+  click(ui.elements.translate); await flush();
+  expect(ui.elements['content-action-text'].textContent).toContain('1/3');
+  expect(ui.elements['content-action-notice'].dataset.tone).toBe('error');
+  expect(ui.elements['content-action-text'].textContent).not.toContain('thành công.');
+});
+
+test('lỗi lưu VI ở lại đến khi đóng; thao tác mới hủy timer cũ', async () => {
+  const ui = await setup(); await select(ui);
+  ui.state.overrides.set('PUT /api/pois/poi-a/narrations/vi', json({ error: 'SECRET' }, 500));
+  editVi(ui, 'Nội dung VI mới');
+  submit(ui.elements['vi-form']); await flush();
+  expect(ui.elements['content-action-text'].textContent).toContain('Không thể lưu nội dung tiếng Việt. Vui lòng thử lại.');
+  expect(ui.elements['content-action-notice'].attributes.role).toBe('alert');
+  expect(ui.elements['dismiss-content-action'].hidden).toBe(false);
+  await jest.advanceTimersByTimeAsync(5001);
+  expect(ui.elements['content-action-notice'].hidden).toBe(false);
+  click(ui.elements['dismiss-content-action']);
+  expect(ui.elements['content-action-notice'].hidden).toBe(true);
+  ui.state.overrides.delete('PUT /api/pois/poi-a/narrations/vi');
+  submit(ui.elements['vi-form']); await flush();
+  await jest.advanceTimersByTimeAsync(3000);
+  click(ui.elements.translate); await flush();
+  await jest.advanceTimersByTimeAsync(2001);
+  expect(ui.elements['content-action-text'].textContent).toBe('Đã dịch và tải nội dung EN/JA/KO thành công.');
+  expect(ui.elements['content-action-notice'].hidden).toBe(false);
+});
 
 describe('Stage 7: danh sách và CRUD POI', () => {
   it('load danh sách API, render tên/loại/trạng thái, chưa gọi narration/TTS', async () => {
@@ -134,13 +239,29 @@ describe('Stage 7: danh sách và CRUD POI', () => {
     expect(ui.elements['poi-active'].checked).toBe(true);
   });
 
+  it('chuyển giữa tạo mới và quản lý POI không giữ dữ liệu form cũ', async () => {
+    const ui = await setup();
+    await select(ui);
+    expect(ui.elements['poi-name'].value).toBe(basePoi.name);
+    click(ui.elements['new-poi']);
+    expect(ui.elements['poi-panel'].hidden).toBe(false);
+    expect(ui.elements['poi-name'].value).toBe('');
+    expect(ui.map.location()).toBeNull();
+    await select(ui);
+    expect(ui.elements['poi-name'].value).toBe(basePoi.name);
+    expect(ui.map.location()).toEqual({ latitude: 10, longitude: 106 });
+    expect(ui.elements['selected-id'].textContent).toContain('poi-a');
+  });
+
   it('chọn POI GET dữ liệu và narration, hiện đúng bốn ngôn ngữ', async () => {
     const ui = await setup();
     await select(ui);
     expect(requests(ui, 'GET', '/api/admin/pois/poi-a')).toHaveLength(1);
     expect(requests(ui, 'GET', '/api/pois/poi-a/narrations')).toHaveLength(1);
     expect(ui.elements['poi-name'].value).toBe(basePoi.name);
-    expect(ui.elements['poi-latitude'].value).toBe('10');
+    expect(ui.elements['poi-legacy-address'].textContent).toContain(basePoi.address);
+    expect(ui.elements['poi-legacy-address'].hidden).toBe(false);
+    expect(ui.map.location()).toEqual({ latitude: 10, longitude: 106 });
     expect(ui.elements['poi-panel'].hidden).toBe(false);
     expect(ui.elements['content-panel'].hidden).toBe(false);
     for (const code of codes) {
@@ -155,12 +276,13 @@ describe('Stage 7: danh sách và CRUD POI', () => {
     const ui = await setup({ pois: [] });
     click(ui.elements['new-poi']);
     fill(ui, { name: '  Điểm mới  ' });
+    ui.map.confirm(0, 0);
     submit(ui.elements['poi-form']);
     await flush();
-    expect(JSON.parse(requests(ui, 'POST', '/api/pois')[0][1].body)).toEqual({ name: 'Điểm mới', description: 'Mô tả mới', category: 'cafe', address: '', latitude: 0, longitude: 0, geofenceRadius: 75, isActive: false });
+    expect(JSON.parse(requests(ui, 'POST', '/api/pois')[0][1].body)).toEqual({ name: 'Điểm mới', description: 'Mô tả mới', category: 'cafe', address: '', streetAddress: '', ward: '', city: '', latitude: 0, longitude: 0, geofenceRadius: 75, isActive: false });
     expect(ui.elements['poi-rows'].children).toHaveLength(1);
     expect(ui.elements['selected-id'].textContent).toContain('created-poi');
-    expect(ui.elements['action-status'].textContent).toContain('Đã tạo POI');
+    expect(ui.elements['action-status'].textContent).toContain('Đã tạo địa điểm');
     expect(requests(ui, 'POST')).toHaveLength(1);
   });
 
@@ -177,17 +299,56 @@ describe('Stage 7: danh sách và CRUD POI', () => {
     expect(ui.elements['action-status'].textContent).toContain('Đã lưu thay đổi');
   });
 
-  it.each([['name', ' '], ['description', ''], ['category', ''], ['latitude', ''], ['latitude', '91'], ['longitude', '-181'], ['radius', '0'], ['radius', '12abc'], ['latitude', 'Infinity']])(
+  it.each([['name', ' '], ['description', ''], ['category', ''], ['radius', '0'], ['radius', '12abc']])(
     'validation %s=%s không gửi request ghi', async (field, value) => {
       const ui = await setup();
       click(ui.elements['new-poi']);
       fill(ui, { [field]: value });
+      ui.map.confirm(10, 106);
       submit(ui.elements['poi-form']);
       expect(requests(ui, 'POST')).toEqual([]);
       expect(ui.elements[`poi-${field}`].attributes['aria-invalid']).toBe('true');
       expect(ui.elements['action-status'].dataset.tone).toBe('error');
     }
   );
+
+  it('không lưu POI mới khi vị trí chưa được xác nhận', async () => {
+    const ui = await setup({ pois: [] });
+    click(ui.elements['new-poi']);
+    fill(ui);
+    submit(ui.elements['poi-form']);
+    expect(requests(ui, 'POST')).toHaveLength(0);
+    expect(ui.elements['action-status'].textContent).toContain('xác nhận vị trí');
+  });
+
+  it('sửa thông tin POI cũ giữ nguyên tọa độ và địa chỉ chung', async () => {
+    const ui = await setup();
+    await select(ui);
+    ui.elements['poi-name'].value = 'Tên mới';
+    submit(ui.elements['poi-form']);
+    await flush();
+    expect(JSON.parse(requests(ui, 'PUT', '/api/pois/poi-a')[0][1].body)).toMatchObject({
+      name: 'Tên mới', address: basePoi.address, latitude: basePoi.latitude, longitude: basePoi.longitude,
+    });
+  });
+
+  it('lưu các phần địa chỉ và tọa độ đã xác nhận từ bản đồ', async () => {
+    const ui = await setup({ pois: [] });
+    click(ui.elements['new-poi']);
+    fill(ui, { 'street-address': '23 Đường Mạc Đĩnh Chi', ward: 'Phường Sài Gòn', city: 'Thành phố Hồ Chí Minh' });
+    ui.map.confirm(10, 106);
+    submit(ui.elements['poi-form']);
+    await flush();
+    expect(JSON.parse(requests(ui, 'POST', '/api/pois')[0][1].body)).toMatchObject({
+      streetAddress: '23 Đường Mạc Đĩnh Chi', ward: 'Phường Sài Gòn', city: 'Thành phố Hồ Chí Minh',
+      address: '23 Đường Mạc Đĩnh Chi, Phường Sài Gòn, Thành phố Hồ Chí Minh', latitude: 10, longitude: 106,
+    });
+    click(ui.elements['new-poi']);
+    await select(ui);
+    expect(ui.elements['poi-street-address'].value).toBe('23 Đường Mạc Đĩnh Chi');
+    expect(ui.elements['poi-ward'].value).toBe('Phường Sài Gòn');
+    expect(ui.elements['poi-city'].value).toBe('Thành phố Hồ Chí Minh');
+  });
 
   it('delete cancel không gọi API; confirm gọi DELETE 204 và clear POI đang chọn', async () => {
     const ui = await setup();
@@ -242,7 +403,6 @@ describe('Stage 7: VI, translation và audio', () => {
     expect(ui.audio.getAttribute('src')).toBeNull();
     for (const code of ['en', 'ja', 'ko']) {
       expect(ui.cards[code]['.language-text'].hidden).toBe(true);
-      expect(ui.cards[code]['.generate-audio'].disabled).toBe(true);
       expect(ui.cards[code]['.listen-audio'].hidden).toBe(true);
     }
     expect(requests(ui, 'POST')).toEqual([]);
@@ -264,11 +424,11 @@ describe('Stage 7: VI, translation và audio', () => {
     const ui = await setup({ pois: [{ ...basePoi, narrations: {} }] });
     await select(ui);
     click(ui.elements['translate']);
-    click(ui.cards.vi['.generate-audio']);
+    click(ui.elements['generate-all-audio']);
     expect(requests(ui, 'POST')).toEqual([]);
     editVi(ui, 'Nháp chưa lưu');
     expect(ui.elements['translate'].disabled).toBe(true);
-    expect(ui.cards.vi['.generate-audio'].disabled).toBe(true);
+    expect(ui.elements['generate-all-audio'].disabled).toBe(true);
     expect(ui.elements['draft-status'].textContent).toContain('chưa lưu');
     click(ui.elements['translate']);
     expect(requests(ui, 'POST')).toEqual([]);
@@ -312,20 +472,124 @@ describe('Stage 7: VI, translation và audio', () => {
     expect(ui.audio.play).not.toHaveBeenCalled();
   });
 
-  it.each(codes)('Tạo audio %s gửi đúng endpoint và refresh audioUrl, chỉ bấm Nghe mới play', async (code) => {
+  it('tạo tuần tự 4 audio từ các nội dung đã lưu và nghe đúng từng ngôn ngữ', async () => {
     const ui = await setup();
     await select(ui);
-    click(ui.cards[code]['.generate-audio']);
+    click(ui.elements['generate-all-audio']);
     await flush();
-    expect(requests(ui, 'POST', `/api/pois/poi-a/narrations/${code}/audio`)).toHaveLength(1);
-    expect(requests(ui, 'POST', `/api/pois/poi-a/narrations/${code}/audio`)[0][1].headers).toMatchObject({ 'Content-Type': 'application/json', 'X-CSRF-Token': 'fixture' });
-    expect(ui.cards[code]['.listen-audio'].hidden).toBe(false);
-    expect(ui.cards[code]['.audio-status'].textContent).toContain('Có audio');
+    expect(requests(ui, 'POST').map(([url]) => url)).toEqual(codes.map((code) => `/api/pois/poi-a/narrations/${code}/audio`));
+    for (const code of codes) {
+      expect(requests(ui, 'POST', `/api/pois/poi-a/narrations/${code}/audio`)[0][1].headers)
+        .toMatchObject({ 'Content-Type': 'application/json', 'X-CSRF-Token': 'fixture' });
+      expect(ui.cards[code]['.listen-audio'].hidden).toBe(false);
+      expect(ui.cards[code]['.audio-status'].textContent).toContain('Có audio');
+    }
     expect(ui.audio.play).not.toHaveBeenCalled();
-    click(ui.cards[code]['.listen-audio']);
+    click(ui.cards.ja['.listen-audio']);
     await flush();
-    expect(ui.audio.getAttribute('src')).toBe(`/api/admin/audio/generated_${code}_1.wav`);
+    expect(ui.audio.getAttribute('src')).toBe('/api/admin/audio/generated_ja_3.wav');
     expect(ui.audio.play).toHaveBeenCalledTimes(1);
+  });
+
+  it('thiếu bản dịch thì báo ngôn ngữ thiếu và không tạo audio', async () => {
+    const narrations = content();
+    delete narrations.ja;
+    const ui = await setup({ pois: [{ ...basePoi, narrations }] });
+    await select(ui);
+    click(ui.elements['generate-all-audio']);
+    await flush();
+    expect(ui.elements['content-action-text'].textContent).toContain('JA');
+    expect(ui.elements['content-action-text'].textContent).toContain('dịch');
+    expect(requests(ui, 'POST')).toEqual([]);
+  });
+
+  it('audio có sẵn được giữ, một ngôn ngữ lỗi không ngăn các ngôn ngữ còn lại', async () => {
+    const narrations = content();
+    narrations.vi.audioFile = 'server_vi.wav';
+    const ui = await setup({ pois: [{ ...basePoi, narrations }] });
+    await select(ui);
+    ui.state.overrides.set('POST /api/pois/poi-a/narrations/ja/audio', json({ error: 'Piper failed' }, 500));
+    click(ui.elements['generate-all-audio']);
+    await flush();
+    expect(requests(ui, 'POST').map(([url]) => url)).toEqual(['en', 'ja', 'ko'].map((code) => `/api/pois/poi-a/narrations/${code}/audio`));
+    expect(ui.cards.vi['.listen-audio'].hidden).toBe(false);
+    expect(ui.cards.en['.listen-audio'].hidden).toBe(false);
+    expect(ui.cards.ja['.listen-audio'].hidden).toBe(true);
+    expect(ui.cards.ko['.listen-audio'].hidden).toBe(false);
+    expect(ui.elements['content-action-text'].textContent).toContain('Tạo thất bại 1/4: JA');
+    ui.state.overrides.delete('POST /api/pois/poi-a/narrations/ja/audio');
+    click(ui.elements['generate-all-audio']);
+    await flush();
+    expect(requests(ui, 'POST', '/api/pois/poi-a/narrations/ja/audio')).toHaveLength(2);
+    expect(requests(ui, 'POST')).toHaveLength(4);
+    expect(ui.cards.ja['.listen-audio'].hidden).toBe(false);
+    click(ui.elements['generate-all-audio']);
+    expect(requests(ui, 'POST')).toHaveLength(4);
+  });
+
+  it('tiến trình chặn nhấn lặp và không chạy nhiều TTS cùng lúc', async () => {
+    const ui = await setup();
+    await select(ui);
+    const delayed = pending();
+    ui.state.overrides.set('POST /api/pois/poi-a/narrations/vi/audio', () => delayed.promise);
+    click(ui.elements['generate-all-audio']);
+    click(ui.elements['generate-all-audio']);
+    await flush();
+    expect(requests(ui, 'POST')).toHaveLength(1);
+    expect(ui.elements['generate-all-audio'].disabled).toBe(true);
+    expect(ui.elements['content-action-text'].textContent).toContain('0/4');
+    delayed.resolve(json({ poiId: 'poi-a', language: 'vi', text: texts.vi, audioUrl: '/audio/generated_vi_1.wav' }));
+    await flush();
+    expect(requests(ui, 'POST')).toHaveLength(4);
+    expect(ui.elements['generate-all-audio'].disabled).toBe(false);
+  });
+
+  it('audio cũ bị vô hiệu khi nội dung VI thay đổi; batch không dùng bản nháp', async () => {
+    const ui = await setup({ pois: [{ ...basePoi, narrations: content(true) }] });
+    await select(ui);
+    editVi(ui, 'Nội dung VI mới');
+    click(ui.elements['generate-all-audio']);
+    expect(requests(ui, 'POST')).toEqual([]);
+    submit(ui.elements['vi-form']);
+    await flush();
+    expect(ui.cards.vi['.listen-audio'].hidden).toBe(true);
+    expect(ui.elements['generate-all-audio'].disabled).toBe(false);
+    click(ui.elements['generate-all-audio']);
+    await flush();
+    expect(ui.elements['content-action-text'].textContent).toContain('EN, JA, KO');
+    expect(requests(ui, 'POST')).toEqual([]);
+  });
+
+  it('kiểm tra lại server trước khi bỏ qua audio: bản dịch đổi ở phiên khác phải tạo từ text mới', async () => {
+    const ui = await setup({ pois: [{ ...basePoi, narrations: content(true) }] });
+    await select(ui);
+    ui.state.pois[0].narrations.en = { text: 'English updated elsewhere.' };
+    click(ui.elements['generate-all-audio']);
+    await flush();
+    expect(requests(ui, 'POST').map(([url]) => url)).toEqual(['/api/pois/poi-a/narrations/en/audio']);
+    expect(ui.cards.en['.language-text'].textContent).toBe('English updated elsewhere.');
+    expect(ui.cards.en['.listen-audio'].hidden).toBe(false);
+  });
+
+  it('nội dung đổi giữa lúc TTS chạy thì dừng batch và tải lại trạng thái', async () => {
+    const ui = await setup();
+    await select(ui);
+    ui.state.overrides.set('POST /api/pois/poi-a/narrations/vi/audio', json({ error: 'Changed' }, 409));
+    click(ui.elements['generate-all-audio']);
+    await flush();
+    expect(requests(ui, 'POST')).toHaveLength(1);
+    expect(ui.elements['content-action-text'].textContent).toContain('thay đổi');
+    expect(ui.elements['generate-all-audio'].disabled).toBe(false);
+  });
+
+  it('chuyển POI rồi tạo audio không dùng ID hoặc nội dung của POI trước', async () => {
+    const other = { ...basePoi, id: 'poi-b', name: 'POI B', narrations: content() };
+    const ui = await setup({ pois: [{ ...basePoi, narrations: content(true) }, other] });
+    await select(ui, 1);
+    click(ui.elements['generate-all-audio']);
+    await flush();
+    expect(requests(ui, 'POST').map(([url]) => url)).toEqual(codes.map((code) => `/api/pois/poi-b/narrations/${code}/audio`));
+    expect(ui.cards.vi['.listen-audio'].hidden).toBe(false);
   });
 
   it('thiếu audioUrl không cố play hoặc đoán URL từ audioFile trong GET all', async () => {
@@ -417,8 +681,8 @@ describe('Stage 7: lỗi, loading và điều phối request', () => {
     ui.state.overrides.set('POST /api/pois/poi-a/translations', json({ error: 'SECRET-provider-url-key' }, status));
     click(ui.elements['translate']);
     await flush();
-    expect(ui.elements['action-status'].textContent).toMatch(/dịch/);
-    expect(ui.elements['action-status'].textContent).not.toContain('SECRET');
+    expect(ui.elements['content-action-text'].textContent).toMatch(/dịch/);
+    expect(ui.elements['content-action-text'].textContent).not.toContain('SECRET');
     expect(ui.elements['translate'].disabled).toBe(false);
     expect(ui.cards.en['.language-text'].textContent).toBe(texts.en);
     expect(ui.cards.en['.listen-audio'].hidden).toBe(false);
@@ -429,12 +693,12 @@ describe('Stage 7: lỗi, loading và điều phối request', () => {
     const ui = await setup();
     await select(ui);
     ui.state.overrides.set('POST /api/pois/poi-a/narrations/ja/audio', json({ error: 'SECRET piper.exe D:\\models\\file.onnx' }, 500));
-    click(ui.cards.ja['.generate-audio']);
+    click(ui.elements['generate-all-audio']);
     await flush();
-    expect(ui.elements['action-status'].textContent).toContain('Không tạo được audio');
-    expect(ui.elements['action-status'].textContent).not.toMatch(/SECRET|piper.exe|onnx|D:/);
+    expect(ui.elements['content-action-text'].textContent).toContain('Tạo thất bại 1/4: JA');
+    expect(ui.elements['content-action-text'].textContent).not.toMatch(/SECRET|piper.exe|onnx|D:/);
     expect(ui.cards.ja['.language-text'].textContent).toBe(texts.ja);
-    expect(ui.cards.ja['.generate-audio'].disabled).toBe(false);
+    expect(ui.elements['generate-all-audio'].disabled).toBe(false);
   });
 
   it('404 trong mutation của POI đang chọn clear panel', async () => {
@@ -455,7 +719,7 @@ describe('Stage 7: lỗi, loading và điều phối request', () => {
     await select(ui);
     expect(ui.cards.en['.language-text'].hidden).toBe(true);
     expect(ui.cards.en['.listen-audio'].hidden).toBe(true);
-    expect(ui.cards.en['.generate-audio'].disabled).toBe(true);
+    expect(ui.elements['generate-all-audio'].disabled).toBe(false);
     expect(ui.cards.vi['.listen-audio'].hidden).toBe(false);
   });
 
@@ -468,7 +732,7 @@ describe('Stage 7: lỗi, loading và điều phối request', () => {
     ui.state.overrides.set('GET /api/pois/poi-a/narrations/vi', json(response));
     await select(ui);
     expect(ui.elements['content-status'].textContent).toContain('không hợp lệ');
-    expect(ui.cards.vi['.generate-audio'].disabled).toBe(true);
+    expect(ui.elements['generate-all-audio'].disabled).toBe(true);
     expect(ui.cards.vi['.listen-audio'].hidden).toBe(true);
   });
 
@@ -491,25 +755,36 @@ describe('Stage 7: lỗi, loading và điều phối request', () => {
     ui.state.overrides.set(routes[action], () => delayed.promise);
     if (action === 'create') click(ui.elements['new-poi']);
     if (['create', 'edit'].includes(action)) fill(ui);
+    if (action === 'create') ui.map.confirm(10, 106);
     if (action === 'vi') editVi(ui, 'VI mới');
     const run = () => {
       if (['create', 'edit'].includes(action)) submit(ui.elements['poi-form']);
       if (action === 'delete') click(ui.elements['delete-selected']);
       if (action === 'vi') submit(ui.elements['vi-form']);
       if (action === 'translation') click(ui.elements['translate']);
-      if (action === 'audio') click(ui.cards.vi['.generate-audio']);
+      if (action === 'audio') click(ui.elements['generate-all-audio']);
     };
     run(); run();
+    if (action === 'audio') await flush();
     const [method, url] = routes[action].split(' ');
     expect(requests(ui, method, url)).toHaveLength(1);
     expect(ui.elements['new-poi'].disabled).toBe(true);
     expect(ui.elements['poi-fields'].disabled).toBe(true);
     expect(ui.elements['translate'].disabled).toBe(true);
+    const busyLabels = { vi: ['save-vi', 'Đang lưu...'], translation: ['translate', 'Đang dịch...'], audio: ['generate-all-audio', 'Đang tạo audio...'] };
+    if (busyLabels[action]) {
+      const [buttonId, label] = busyLabels[action];
+      expect(ui.elements[buttonId].textContent).toBe(label);
+      expect(ui.elements['content-action-notice'].hidden).toBe(false);
+      expect(ui.elements['action-status'].textContent).toBe('');
+      if (action === 'vi') expect(ui.elements['vi-text'].value).toBe('VI mới');
+    }
     delayed.resolve(json(action === 'delete' ? null : basePoi, action === 'delete' ? 204 : 200));
     await flush();
     expect(ui.elements['new-poi'].disabled).toBe(false);
     expect(ui.elements['reload-pois'].disabled).toBe(false);
     expect(ui.elements['poi-panel'].attributes['aria-busy']).toBe('false');
+    if (busyLabels[action]) expect(ui.elements[busyLabels[action][0]].textContent).not.toBe(busyLabels[action][1]);
   });
 
   it('timeout request dừng loading và cho thử lại, không treo UI', async () => {

@@ -1,10 +1,12 @@
 const vouchers = new Map();
+const shortCodes = new Map();
 const sessions = new Map();
 
 class AccessRepository {
   createVoucher(voucher) {
-    if (vouchers.has(voucher.codeHash)) return null;
+    if (vouchers.has(voucher.codeHash) || shortCodes.has(voucher.shortCodeHash)) return null;
     vouchers.set(voucher.codeHash, { ...voucher });
+    shortCodes.set(voucher.shortCodeHash, voucher.codeHash);
     return { ...voucher };
   }
 
@@ -16,12 +18,13 @@ class AccessRepository {
   // consumption run synchronously with no await between them. A database
   // implementation must replace this with a transaction + conditional update.
   redeemOnce(codeHash, createSession) {
-    const voucher = vouchers.get(codeHash);
+    const voucherKey = vouchers.has(codeHash) ? codeHash : shortCodes.get(codeHash);
+    const voucher = vouchers.get(voucherKey);
     if (!voucher) return { failure: 'invalid' };
     if (voucher.status !== 'unused') return { failure: 'used' };
     const { session, accessToken } = createSession({ ...voucher });
     sessions.set(session.tokenHash, { ...session });
-    vouchers.set(codeHash, {
+    vouchers.set(voucherKey, {
       ...voucher, status: 'redeemed', redeemedAt: session.startedAt,
       expiresAt: session.expiresAt, sessionId: session.id,
     });
@@ -35,6 +38,7 @@ class AccessRepository {
 
   clear() {
     vouchers.clear();
+    shortCodes.clear();
     sessions.clear();
   }
 }

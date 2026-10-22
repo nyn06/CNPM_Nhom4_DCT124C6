@@ -49,19 +49,83 @@
     current: () => user,
   };
   window.ADMIN_AUTH = api;
-  byId('admin-logout').addEventListener('click', async () => {
-    if (disposed || !csrfToken) return;
-    byId('admin-logout').disabled = true;
+
+  const logoutButton = byId('admin-logout');
+  const logoutModal = byId('admin-logout-modal');
+  const logoutCancel = byId('admin-logout-cancel');
+  const logoutConfirm = byId('admin-logout-confirm');
+
+  function closeLogoutModal() {
+    if (logoutModal.hidden) return;
+    logoutModal.hidden = true;
+    logoutButton.focus();
+  }
+
+  function openLogoutModal() {
+    if (disposed || !csrfToken || logoutButton.disabled) return;
+    logoutModal.hidden = false;
+    logoutCancel.focus();
+  }
+
+  logoutButton.addEventListener('click', openLogoutModal);
+
+  logoutCancel.addEventListener('click', closeLogoutModal);
+
+  logoutModal.addEventListener('click', (event) => {
+    if (event.target === logoutModal) closeLogoutModal();
+  });
+
+  logoutModal.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeLogoutModal();
+    }
+  });
+
+  logoutConfirm.addEventListener('click', async () => {
+    if (disposed || !csrfToken || logoutButton.disabled) return;
+
+    logoutButton.disabled = true;
+    logoutCancel.disabled = true;
+    logoutConfirm.disabled = true;
+    logoutConfirm.textContent = 'Đang đăng xuất…';
+
     const current = new AbortController();
     const timeout = setTimeout(() => current.abort(), 10000);
+
     try {
-      const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: current.signal,
-        headers: { 'Content-Type': 'application/json', ...api.headers('POST') }, body: '{}' });
-      if (response.ok || response.status === 401) expire();
-      else byId('admin-session-status').textContent = 'Chưa đăng xuất được. Tải lại trang và thử lại.';
-    } catch { byId('admin-session-status').textContent = 'Mất kết nối; phiên trên server có thể còn hiệu lực. Hãy thử Đăng xuất lại.'; }
-    finally { clearTimeout(timeout); byId('admin-logout').disabled = false; }
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        signal: current.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...api.headers('POST')
+        },
+        body: '{}'
+      });
+
+      if (response.ok || response.status === 401) {
+        expire();
+      } else {
+        byId('admin-session-status').textContent =
+          'Chưa đăng xuất được. Tải lại trang và thử lại.';
+        logoutModal.hidden = true;
+      }
+    } catch {
+      byId('admin-session-status').textContent =
+        'Mất kết nối; phiên trên server có thể còn hiệu lực. Hãy thử Đăng xuất lại.';
+      logoutModal.hidden = true;
+    } finally {
+      clearTimeout(timeout);
+      logoutButton.disabled = false;
+      logoutCancel.disabled = false;
+      logoutConfirm.disabled = false;
+      logoutConfirm.textContent = 'Tiếp tục';
+    }
   });
+
   window.addEventListener('pagehide', () => { disposed = true; clearTimeout(timer); controller?.abort(); byId('admin-shell').hidden = true; });
   // A cached Admin page must revalidate before exposing controls again.
   window.addEventListener('pageshow', (event) => { if (event.persisted) window.location.reload(); });

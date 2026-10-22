@@ -4,17 +4,51 @@
   const byId = (id) => document.getElementById(id);
   const GPS_INTERVAL_MS = 3000;
   const REQUEST_TIMEOUT_MS = 10000;
+  const ADDRESS_INTERVAL_MS = 30000;
+  const ADDRESS_MOVE_METERS = 150;
+  const FIRST_FIX_TIMEOUT_MS = 25000;
   const { sourceLanguage, names: languageNames } = window.POI_LANGUAGES;
   const access = window.TOUR_ACCESS;
+  const tourMap = window.TOUR_MAP;
+  const translations = window.TOUR_TRANSLATIONS;
+  const t = (key, params) => {
+    const value = window.tourT(key, params);
+    return value === key ? ({ locationUnknown: 'Chưa xác định vị trí',
+      addressUnknown: 'Chưa xác định được số nhà, tên đường' }[key] || value) : value;
+  };
+  const dynamicText = new Map();
+  function setText(id, key, params = {}) {
+    if (Object.prototype.hasOwnProperty.call(translations[sourceLanguage], key)) {
+      dynamicText.set(id, { key, params });
+      byId(id).textContent = t(key, params);
+    } else {
+      dynamicText.delete(id);
+      byId(id).textContent = key;
+    }
+  }
   let audioObjectUrl = null;
   let watchId = null;
   let gpsActive = false;
   let gpsSession = 0;
   let gpsTimer = null;
+  let firstFixTimer = null;
   let pendingPosition = null;
   let lastGpsRequest = -Infinity;
   let locationRevision = 0;
   let currentLocation = null;
+  let realLocation = null;
+  let simulatedLocation = null;
+  let loadedPois = null;
+  let displayedNearbyPoi = null;
+  let lastResultAt = null;
+  let addressController = null;
+  let addressTimer = null;
+  let addressRevision = 0;
+  let addressAnchor = null;
+  let addressSource = null;
+  let lastAddressRequest = -Infinity;
+  let addressFailed = false;
+  let addressDisplayKey = null;
   let nearbyController = null;
   let nearbyRequest = 0;
   let currentPoi = null;
@@ -30,41 +64,122 @@
   let confirmedLocationRevision = -1;
   let pendingAutoEntry = null;
 
-  function setMessage(id, text, tone = 'neutral') {
+  function setMessage(id, text, tone = 'neutral', params = {}) {
     const element = byId(id);
-    element.textContent = text;
+    setText(id, text, params);
     element.dataset.tone = tone;
   }
 
   function setResult(state, title, message) {
     if (state !== 'loading') clearNarration();
-    const labels = { idle: 'Chờ vị trí', loading: 'Đang kiểm tra', outside: 'Ngoài phạm vi', error: 'Chưa thể kiểm tra' };
+    const labels = {
+      idle: 'waitingLocation',
+      loading: 'gpsChecking',
+      outside: 'gpsOutside',
+      error: 'gpsError'
+    };
     const panel = byId('geofence-panel');
     panel.dataset.state = state;
     panel.setAttribute('aria-busy', String(state === 'loading'));
     byId('result-empty').hidden = false;
     byId('nearest-card').hidden = true;
-    byId('result-title').textContent = title;
-    byId('result-message').textContent = message;
+    setText('result-title', title);
+    setText('result-message', message);
     setMessage('geofence-badge', labels[state], state === 'error' ? 'error' : 'neutral');
     byId('result-time').textContent = '—';
   }
 
   function displayLocation(location, source) {
-    const changed = !currentLocation || currentLocation.latitude !== location.latitude
-      || currentLocation.longitude !== location.longitude || currentLocation.source !== source;
+    const previous = source === 'GPS thật' ? realLocation : simulatedLocation;
+    const changed = !currentLocation || currentLocation.source !== source || !previous
+      || previous.latitude !== location.latitude || previous.longitude !== location.longitude;
     if (changed) {
       locationRevision++;
       // Trong chuyến tham quan, chỉ đổi/dừng audio sau kết quả geofence của Backend.
       if (!autoEnabled) clearNarration();
     }
     currentLocation = { ...location, source };
-    byId('current-lat').textContent = location.latitude.toFixed(6);
-    byId('current-lng').textContent = location.longitude.toFixed(6);
+    if (source === 'GPS thật') realLocation = currentLocation;
+    else simulatedLocation = currentLocation;
+    tourMap?.setLocation(currentLocation);
+    updateAddress(currentLocation);
     byId('current-accuracy').textContent = Number.isFinite(location.accuracy) && location.accuracy >= 0
-      ? `±${Math.round(location.accuracy)} m` : 'Không có';
-    byId('current-source').textContent = source;
+      ? `±${Math.round(location.accuracy)} m` : t('noAccuracy');
+    setText('current-source', source === 'GPS thật' ? 'gpsReal' : 'gpsSimulated');
     return changed;
+  }
+
+  function showAddress(street, ward = '—', city = '—', key = null) {
+    addressDisplayKey = key;
+    byId('current-street').textContent = street;
+    byId('current-ward').textContent = ward;
+    byId('current-city').textContent = city;
+  }
+
+  function cancelAddress() {
+    addressRevision++;
+    if (addressController) addressController.abort();
+    addressController = null;
+    clearTimeout(addressTimer);
+    addressTimer = null;
+    addressAnchor = null;
+    addressSource = null;
+    lastAddressRequest = -Infinity;
+    addressFailed = false;
+  }
+
+  function distanceMeters(a, b) {
+    const radians = Math.PI / 180;
+    const lat = (b.latitude - a.latitude) * radians;
+    const lng = (b.longitude - a.longitude) * radians;
+    const arc = Math.sin(lat / 2) ** 2 + Math.cos(a.latitude * radians)
+      * Math.cos(b.latitude * radians) * Math.sin(lng / 2) ** 2;
+    return 12742000 * Math.asin(Math.min(1, Math.sqrt(arc)));
+  }
+
+  function updateAddress(location) {
+    if (addressSource !== location.source) {
+      cancelAddress();
+      addressSource = location.source;
+      showAddress(t('locationUnknown'), '—', '—', 'locationUnknown');
+    }
+    const moved = !addressAnchor || distanceMeters(addressAnchor, location) >= ADDRESS_MOVE_METERS;
+    if (!moved && !addressFailed) return;
+    const remaining = ADDRESS_INTERVAL_MS - (Date.now() - lastAddressRequest);
+    if (remaining > 0) {
+      if (addressTimer === null && !addressController) {
+        addressTimer = setTimeout(() => {
+          addressTimer = null;
+          if (currentLocation?.source === addressSource) updateAddress(currentLocation);
+        }, remaining);
+      }
+      return;
+    }
+    clearTimeout(addressTimer);
+    addressTimer = null;
+    if (addressController) addressController.abort();
+    const revision = ++addressRevision;
+    const controller = new AbortController();
+    addressController = controller;
+    addressAnchor = location;
+    lastAddressRequest = Date.now();
+    addressFailed = false;
+    showAddress(t('addressUnknown'), '—', '—', 'addressUnknown');
+    const params = new URLSearchParams({ lat: String(location.latitude), lng: String(location.longitude) });
+    fetchJson(`/api/geocode/reverse?${params}`, controller, { cache: 'no-store' }, 8000)
+      .then((data) => {
+        if (revision !== addressRevision) return;
+        const value = (field) => typeof data?.[field] === 'string' ? data[field].trim() : '';
+        const street = value('streetAddress');
+        showAddress(street || t('addressUnknown'), value('ward') || '—', value('city') || '—',
+          street ? null : 'addressUnknown');
+      })
+      .catch(() => {
+        if (revision !== addressRevision) return;
+        addressFailed = true;
+        showAddress(t('addressFetchFailed'), '—', '—', 'addressFetchFailed');
+      })
+      .finally(() => { if (revision === addressRevision) addressController = null; });
   }
 
   async function fetchJson(url, controller, options = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
@@ -75,19 +190,19 @@
       try {
         data = await response.json();
       } catch {
-        throw new Error('Phản hồi không hợp lệ. Hãy kiểm tra server và thử lại.');
+        throw new Error(t('invalidResponse'));
       }
       if (!response.ok) {
         if (response.status === 401) access.lose();
-        const error = new Error(response.status === 401 ? 'Phiên đã hết hạn hoặc không hợp lệ.'
-          : response.status === 404 ? 'Chưa có nội dung thuyết minh.' : 'Chưa xử lý được yêu cầu. Hãy thử lại.');
+        const error = new Error(response.status === 401 ? t('sessionExpired')
+          : response.status === 404 ? t('noNarrationFound') : t('requestFailed'));
         error.statusCode = response.status;
         throw error;
       }
       return data;
     } catch (error) {
-      if (error.name === 'AbortError') throw new Error('Yêu cầu quá thời gian chờ. Hãy thử lại.');
-      if (error instanceof TypeError) throw new Error('Không kết nối được Backend. Hãy kiểm tra server và kết nối mạng.');
+      if (error.name === 'AbortError') throw new Error(t('requestTimeout'));
+      if (error instanceof TypeError) throw new Error(t('backendUnavailable'));
       throw error;
     } finally {
       clearTimeout(timeout);
@@ -116,7 +231,7 @@
     byId('narration-text').hidden = true;
     byId('retry-narration').hidden = true;
     byId('narration-panel').setAttribute('aria-busy', 'false');
-    setMessage('narration-status', 'Đến một địa điểm để xem nội dung thuyết minh.');
+    setMessage('narration-status', t('narrationWaiting'));
   }
 
   function clearAudio() {
@@ -135,7 +250,7 @@
     byId('generate-audio').hidden = true;
     byId('generate-audio').disabled = false;
     byId('audio-panel').setAttribute('aria-busy', 'false');
-    setMessage('audio-status', 'Đến một địa điểm để chọn nội dung nghe.');
+    setMessage('audio-status', t('audioWaiting'));
   }
 
   async function displayAudio(narration) {
@@ -144,13 +259,13 @@
     byId('generate-audio').hidden = true;
     const audioUrl = narration.audioUrl;
     if (!audioUrl) {
-      byId('generate-audio').textContent = 'Tạo audio cho ngôn ngữ này';
-      setMessage('audio-status', 'Chưa có audio cho ngôn ngữ này. Người quản lý cần chuẩn bị audio.');
+      setText('generate-audio', 'generateAudio');
+      setMessage('audio-status', 'audioMissingAdmin');
       return;
     }
     // Chỉ chấp nhận WAV của Backend cùng origin, không nhận URL ngoài hoặc path traversal.
     if (typeof audioUrl !== 'string' || !/^\/audio\/[a-zA-Z0-9_-]+\.wav$/.test(audioUrl)) {
-      setMessage('audio-status', 'Đường dẫn audio không hợp lệ.', 'error');
+      setMessage('audio-status', 'audioInvalidUrl', 'error');
       return;
     }
     const requestId = ++audioRequest;
@@ -160,13 +275,13 @@
     try {
       const response = await fetch(audioUrl, { signal: controller.signal, headers: access.headers(), cache: 'no-store' });
       if (response.status === 401) { access.lose(); return; }
-      if (!response.ok) throw new Error('Không tải được audio. Hãy thử tải lại nội dung.');
+      if (!response.ok) throw new Error(t('audioLoadError'));
       const blob = await response.blob();
       if (requestId !== audioRequest || !access.active()) return;
-      if (blob.type !== 'audio/wav' && blob.type !== 'audio/x-wav') throw new Error('Audio trả về không hợp lệ.');
+      if (blob.type !== 'audio/wav' && blob.type !== 'audio/x-wav') throw new Error(t('audioInvalidResponse'));
       audioObjectUrl = URL.createObjectURL(blob);
     } catch {
-      if (requestId === audioRequest) setMessage('audio-status', 'Không tải được audio. Hãy kiểm tra mạng và thử tải lại nội dung.', 'error');
+      if (requestId === audioRequest) setMessage('audio-status', 'audioNetworkError', 'error');
       return;
     } finally {
       clearTimeout(timeout);
@@ -176,8 +291,8 @@
     const audio = byId('narration-audio');
     audio.setAttribute('src', audioObjectUrl);
     audio.hidden = false;
-    byId('generate-audio').textContent = 'Tạo lại audio';
-    setMessage('audio-status', 'Audio đã sẵn sàng. Bấm Play để nghe.');
+    setText('generate-audio', 'regenerateAudio');
+    setMessage('audio-status', 'audioReadyPlay');
   }
 
   async function playAutoNarration() {
@@ -191,22 +306,19 @@
     entry.started = true;
     const audio = byId('narration-audio');
     if (!audio.getAttribute('src')) {
-      setMessage('auto-status', currentNarration.audioUrl
-        ? 'Đường dẫn audio không hợp lệ. Hãy kiểm tra nội dung của điểm này.'
-        : 'Điểm này chưa có audio cho ngôn ngữ đã chọn. Người quản lý cần chuẩn bị audio.');
+      setMessage('auto-status', currentNarration.audioUrl ? 'autoInvalidAudio' : 'autoMissingAudio');
       return;
     }
-    setMessage('auto-status', `Đang tự động phát ${currentPoi.name}…`, 'success');
+    setMessage('auto-status', 'autoPlaying', 'success', { name: currentPoi.name });
     try {
       await audio.play();
       if (pendingAutoEntry === entry && autoEnabled) {
-        setMessage('auto-status', `Đã phát điểm ${currentPoi.name}. Chỉ tự phát lại sau khi ra ngoài rồi vào lại.`, 'success');
+        setMessage('auto-status', 'autoPlayed', 'success', { name: currentPoi.name });
       }
     } catch {
       if (pendingAutoEntry !== entry || !autoEnabled) return;
-      const message = 'Trình duyệt đã chặn phát tự động. Hãy bấm Play để nghe.';
-      setMessage('auto-status', message, 'info');
-      setMessage('audio-status', message, 'info');
+      setMessage('auto-status', 'autoplayBlocked', 'info');
+      setMessage('audio-status', 'autoplayBlocked', 'info');
     }
   }
 
@@ -215,11 +327,10 @@
     insidePoiIds.clear();
     selectedPoiId = null;
     pendingAutoEntry = null;
-    byId('tour-simulation').disabled = false;
     byId('toggle-tour').setAttribute('aria-pressed', 'false');
-    byId('tour-button-label').textContent = 'Bắt đầu tham quan';
-    setMessage('tour-status', 'Tự động thuyết minh: Đang tắt');
-    setMessage('auto-status', 'Bấm bắt đầu để nghe khi đi vào một địa điểm.');
+    setText('tour-button-label', 'startTour');
+    setMessage('tour-status', 'tourStatus');
+    setMessage('auto-status', 'tourHelp');
   }
 
   function toggleTour() {
@@ -228,35 +339,26 @@
       stopGps();
       return;
     }
-    if (!access.active()) { access.lose('Hãy kích hoạt vé trước khi bắt đầu tham quan.'); return; }
+    if (!access.active()) { access.lose(t('startTicketFirst')); return; }
     autoEnabled = true;
     insidePoiIds.clear();
     selectedPoiId = null;
     clearNarration();
-    byId('tour-simulation').disabled = true;
     byId('toggle-tour').setAttribute('aria-pressed', 'true');
-    byId('tour-button-label').textContent = 'Dừng tham quan';
-    setMessage('tour-status', 'Tự động thuyết minh: Đang bật', 'success');
-    setMessage('auto-status', 'Chưa vào điểm thuyết minh. Đang chờ kết quả vị trí.');
-    if (byId('tour-simulation').checked) {
-      stopTracking();
-      cancelNearby();
-      setMessage('gps-status', 'GPS giả lập');
-      setMessage('gps-message', 'Nhập tọa độ và bấm kiểm tra để tiếp tục chuyến tham quan giả lập.');
-      setResult('idle', 'Tham quan bằng GPS giả lập', 'Kiểm tra tọa độ ngoài phạm vi, rồi thử tọa độ của một địa điểm.');
-    } else {
-      startGps();
-    }
+    setText('tour-button-label', 'stopTour');
+    setMessage('tour-status', 'tourOn', 'success');
+    setMessage('auto-status', 'autoWaitingPosition');
+    startGps();
   }
 
   function generateAudio() {
-    setMessage('audio-status', 'Tạo audio trong trang Admin demo local.');
+    setMessage('audio-status', 'audioAdminOnly');
   }
 
   async function loadNarration(poi, force = false, autoEntry = false) {
     if (!access.active()) {
       clearNarration();
-      setMessage('narration-status', 'Kích hoạt vé để xem và nghe thuyết minh.');
+      setMessage('narration-status', 'activateForNarration');
       return;
     }
     const language = byId('language').value;
@@ -270,42 +372,41 @@
     const requestId = narrationRequest;
     const controller = new AbortController();
     narrationController = controller;
-    byId('narration-title').textContent = `Thuyết minh – ${languageNames[language]}`;
+    setText('narration-title', 'narrationLanguage', { language: languageNames[language] });
     byId('narration-panel').setAttribute('aria-busy', 'true');
     byId('narration-text').textContent = '';
     byId('narration-text').hidden = true;
     byId('retry-narration').hidden = true;
-    setMessage('narration-status', 'Đang tải nội dung thuyết minh…');
-    setMessage('audio-status', 'Đang kiểm tra audio cho ngôn ngữ đã chọn…');
+    setMessage('narration-status', 'loadingNarration');
+    setMessage('audio-status', 'loadingAudio');
 
     try {
       const data = await fetchJson(`/api/pois/${encodeURIComponent(poi.id)}/narrations/${encodeURIComponent(language)}`, controller,
         { headers: access.headers() });
       if (requestId !== narrationRequest) return;
       if (!data || data.poiId !== poi.id || data.language !== language || typeof data.text !== 'string' || !data.text.trim()) {
-        throw new Error('Nội dung thuyết minh trả về không hợp lệ.');
+        throw new Error(t('invalidNarrationResponse'));
       }
       byId('narration-text').textContent = data.text;
       byId('narration-text').setAttribute('lang', language);
       byId('narration-text').hidden = false;
-      setMessage('narration-status', `Nội dung của ${poi.name}`);
+      setMessage('narration-status', 'narrationOf', 'neutral', { name: poi.name });
       await displayAudio(data);
       playAutoNarration();
     } catch (error) {
       if (requestId !== narrationRequest) return;
       const missing = error.statusCode === 404;
       setMessage('narration-status', missing
-        ? 'Chưa có nội dung thuyết minh cho ngôn ngữ này.' : error.message,
+        ? 'noNarration' : error.message,
       missing ? 'neutral' : 'error');
       byId('retry-narration').hidden = false;
       setMessage('audio-status', missing
-        ? 'Chưa có nội dung thuyết minh cho ngôn ngữ này để tạo audio.' : 'Chưa tải được nội dung để nghe.',
+        ? 'noNarrationAudio' : 'narrationLoadAudioError',
       missing ? 'neutral' : 'error');
       if (pendingAutoEntry && autoEnabled) {
         pendingAutoEntry = null;
         setMessage('auto-status', missing
-          ? 'Chưa có nội dung thuyết minh cho ngôn ngữ đã chọn. Hãy dùng thử tải lại nội dung.'
-          : 'Chưa tải được thuyết minh tự động. Hãy dùng thử tải lại nội dung.', missing ? 'neutral' : 'error');
+          ? 'autoNarrationMissing' : 'autoNarrationLoadError', missing ? 'neutral' : 'error');
       }
     } finally {
       if (requestId === narrationRequest) {
@@ -318,14 +419,14 @@
   function renderNearby(data, source) {
     if (typeof data.insideGeofence !== 'boolean' || !Array.isArray(data.pois)
       || (data.insideGeofence && (!data.nearestPoi || !Number.isFinite(data.nearestPoi.distance)))) {
-      throw new Error('Kết quả vị trí không hợp lệ. Hãy thử lại.');
+      throw new Error(t('invalidNearbyResponse'));
     }
 
     // pois là danh sách inside do Backend lọc; không tính khoảng cách/bán kính ở frontend.
     const nextInsideIds = new Set(data.insideGeofence ? data.pois.map((poi) => poi.id) : []);
     const nearestId = data.insideGeofence ? data.nearestPoi.id : null;
     if (data.insideGeofence && (typeof nearestId !== 'string' || !nextInsideIds.has(nearestId))) {
-      throw new Error('Kết quả vị trí không hợp lệ. Hãy thử lại.');
+      throw new Error(t('invalidNearbyResponse'));
     }
     const autoEntry = autoEnabled && nearestId !== null && !insidePoiIds.has(nearestId);
     const selectionChanged = selectedPoiId !== nearestId;
@@ -333,33 +434,39 @@
     if (autoEnabled) {
       insidePoiIds = nextInsideIds;
       selectedPoiId = nearestId;
-      if (nearestId === null) setMessage('auto-status', 'Chưa vào điểm thuyết minh. Đã sẵn sàng cho lần vào tiếp theo.');
-      else if (autoEntry) setMessage('auto-status', `Đã vào khu vực ${data.nearestPoi.name}. Đang tải audio…`, 'info');
-      else if (selectionChanged) setMessage('auto-status', 'Điểm gần nhất đã ở trong phạm vi từ trước. Bấm Play để nghe hoặc ra ngoài rồi vào lại.');
+      if (nearestId === null) setMessage('auto-status', 'autoReadyNextEntry');
+      else if (autoEntry) setMessage('auto-status', 'autoEntering', 'info', { name: data.nearestPoi.name });
+      else if (selectionChanged) setMessage('auto-status', 'autoAlreadyInside');
     }
 
     if (!data.insideGeofence) {
-      setResult('outside', 'Chưa có địa điểm nào trong phạm vi thuyết minh.',
-        'Hãy tiếp tục di chuyển đến gần một địa điểm, hoặc thử một tọa độ khác.');
+      displayedNearbyPoi = null;
+      setResult('outside', 'outsideTitle', 'outsideHelp');
     } else {
       const poi = data.nearestPoi;
+      displayedNearbyPoi = poi;
       byId('geofence-panel').dataset.state = 'inside';
       byId('geofence-panel').setAttribute('aria-busy', 'false');
       byId('result-empty').hidden = true;
       byId('nearest-card').hidden = false;
-      setMessage('geofence-badge', 'Trong phạm vi', 'success');
-      byId('nearest-name').textContent = `Đã đến ${poi.name}`;
-      byId('nearest-address').textContent = poi.address || 'Chưa có địa chỉ';
+      setMessage('geofence-badge', 'insideRange', 'success');
+      setText('nearest-name', 'arrivedAtName', { name: poi.name });
+      const savedAddress = [poi.streetAddress, poi.ward, poi.city]
+        .filter((part) => typeof part === 'string' && part.trim()).map((part) => part.trim()).join(', ');
+      if (savedAddress || poi.address) {
+        dynamicText.delete('nearest-address');
+        byId('nearest-address').textContent = savedAddress || poi.address;
+      } else setText('nearest-address', 'noAddress');
       byId('nearest-description').textContent = poi.description || '';
-      byId('nearest-distance').textContent = `${poi.distance.toLocaleString('vi-VN', { maximumFractionDigits: 2 })} m`;
+      byId('nearest-distance').textContent = `${poi.distance.toLocaleString(byId('language').value, { maximumFractionDigits: 2 })} m`;
       byId('nearest-radius').textContent = `${poi.geofenceRadius} m`;
-      byId('matched-count').textContent = data.pois.length > 1
-        ? `${data.pois.length} địa điểm trong phạm vi · Đang hiển thị địa điểm gần nhất.`
-        : 'Địa điểm gần nhất trong phạm vi của bạn.';
+      setText('matched-count', data.pois.length > 1 ? 'multipleInside' : 'nearestInside',
+        { count: data.pois.length });
       loadNarration(poi, false, autoEntry);
     }
-    byId('result-source').textContent = `Kết quả từ ${source.toLowerCase()}`;
-    byId('result-time').textContent = `Cập nhật ${new Date().toLocaleTimeString('vi-VN')}`;
+    setText('result-source', 'resultFrom', { source: t(source === 'GPS thật' ? 'gpsReal' : 'gpsSimulated') });
+    lastResultAt = new Date();
+    setText('result-time', 'updatedAt', { time: lastResultAt.toLocaleTimeString(byId('language').value) });
   }
 
   async function checkNearby(location, source) {
@@ -369,8 +476,8 @@
     const controller = new AbortController();
     nearbyController = controller;
     byId('check-simulation').disabled = source === 'GPS giả lập';
-    setResult('loading', 'Đang tìm địa điểm quanh bạn…', 'Vị trí đang được kiểm tra. Kết quả sẽ xuất hiện tại đây.');
-    byId('result-source').textContent = source;
+    setResult('loading', 'findingNearby', 'checkingPosition');
+    setText('result-source', source === 'GPS thật' ? 'gpsReal' : 'gpsSimulated');
 
     try {
       // Cả GPS thật và giả lập dùng cùng API; geofence do Backend quyết định.
@@ -380,8 +487,8 @@
       renderNearby(data, source);
     } catch (error) {
       if (requestId !== nearbyRequest || revision !== locationRevision) return;
-      setResult('error', 'Chưa thể kiểm tra vị trí', error.message);
-      if (autoEnabled) setMessage('auto-status', 'Chưa xác định được geofence. Hãy thử kiểm tra vị trí lại.', 'error');
+      setResult('error', 'nearbyErrorTitle', error.message);
+      if (autoEnabled) setMessage('auto-status', 'geofenceRetry', 'error');
     } finally {
       if (requestId === nearbyRequest) {
         nearbyController = null;
@@ -396,6 +503,9 @@
     gpsSession++;
     if (watchId !== null) navigator.geolocation.clearWatch(watchId);
     watchId = null;
+    clearTimeout(firstFixTimer);
+    firstFixTimer = null;
+    cancelAddress();
     clearTimeout(gpsTimer);
     gpsTimer = null;
     pendingPosition = null;
@@ -407,26 +517,26 @@
     if (autoEnabled) disableAutoNarration();
     stopTracking();
     cancelNearby();
-    setMessage('gps-status', 'GPS đã dừng');
-    setMessage('gps-message', 'Đã dừng theo dõi. Tọa độ hiển thị là vị trí nhận gần nhất.');
-    setResult('idle', 'Định vị đã dừng', 'Bật lại GPS hoặc dùng vị trí giả lập để tiếp tục khám phá.');
-    byId('result-source').textContent = 'Đã dừng kiểm tra GPS';
+    setMessage('gps-status', 'gpsStopped');
+    setMessage('gps-message', 'trackingStopped');
+    setResult('idle', 'locationStopped', 'restartLocationHelp');
+    setText('result-source', 'gpsCheckStopped');
   }
 
   function gpsError(error) {
     stopTracking();
     cancelNearby();
     const messages = {
-      1: ['GPS bị từ chối', 'Bạn chưa cho phép vị trí. Có thể cấp quyền trong trình duyệt hoặc dùng GPS giả lập.'],
-      2: ['GPS không khả dụng', 'Thiết bị chưa xác định được vị trí. Hãy thử lại hoặc dùng GPS giả lập.'],
-      3: ['GPS lỗi', 'Lấy vị trí quá thời gian chờ. Hãy thử lại ở nơi có tín hiệu tốt hơn.'],
+      1: ['gpsDenied', 'gpsPermissionHelp'],
+      2: ['gpsUnavailable', 'gpsUnavailableHelp'],
+      3: ['gpsFailure', 'gpsTimeoutHelp'],
     };
-    const [status, message] = messages[error.code] || ['GPS lỗi', 'Không lấy được vị trí hợp lệ. Hãy thử lại hoặc dùng GPS giả lập.'];
+    const [status, message] = messages[error.code] || ['gpsFailure', 'gpsInvalidHelp'];
     setMessage('gps-status', status, 'error');
     setMessage('gps-message', message, 'error');
-    setResult('idle', 'Thử khám phá bằng GPS giả lập', message);
-    if (autoEnabled) setMessage('auto-status', 'GPS thật đang dừng. Bạn có thể tiếp tục tham quan bằng vị trí giả lập.', 'info');
-    byId('result-source').textContent = 'Chưa có kết quả vị trí';
+    setResult('idle', 'trySimulation', message);
+    if (autoEnabled) setMessage('auto-status', 'realGpsStoppedSimulation', 'info');
+    setText('result-source', 'noLocationResult');
   }
 
   function runGpsCheck() {
@@ -439,6 +549,8 @@
   }
 
   function receivePosition(position) {
+    clearTimeout(firstFixTimer);
+    firstFixTimer = null;
     const { latitude, longitude, accuracy } = position.coords;
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90
       || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
@@ -447,10 +559,10 @@
     }
     const location = { latitude, longitude, accuracy };
     const changed = displayLocation(location, 'GPS thật');
-    setMessage('gps-status', 'GPS đang hoạt động', 'success');
-    setMessage('gps-message', 'Đang theo dõi vị trí. Kiểm tra địa điểm tối đa một lần mỗi 3 giây.');
+    setMessage('gps-status', 'gpsActive', 'success');
+    setMessage('gps-message', 'trackingPosition');
     if (changed) {
-      setResult('loading', 'Đang cập nhật vị trí…', 'Đang chờ kiểm tra tọa độ mới nhất của bạn.');
+      setResult('loading', 'updatingPosition', 'checkingLatestPosition');
     }
     pendingPosition = location;
     if (gpsTimer !== null) return;
@@ -462,26 +574,40 @@
   function startGps() {
     if (gpsActive) return;
     if (!navigator.geolocation || !window.isSecureContext) {
-      setMessage('gps-status', 'GPS không khả dụng', 'error');
+      setMessage('gps-status', 'gpsUnavailable', 'error');
       setMessage('gps-message', !navigator.geolocation
-        ? 'Trình duyệt không hỗ trợ định vị. Bạn vẫn có thể dùng GPS giả lập.'
-        : 'GPS thật cần HTTPS hoặc localhost. Hãy dùng GPS giả lập trên kết nối hiện tại.', 'error');
-      if (autoEnabled) setMessage('auto-status', 'GPS thật không khả dụng. Bạn có thể tiếp tục tham quan bằng vị trí giả lập.', 'info');
+        ? 'gpsUnsupportedHelp'
+        : 'gpsSecureContextHelp', 'error');
+      if (autoEnabled) setMessage('auto-status', 'realGpsUnavailableSimulation', 'info');
       return;
     }
     cancelNearby();
     clearNarration();
+    if (currentLocation?.source === 'GPS giả lập') {
+      currentLocation = null;
+      tourMap?.clearLocation?.();
+      setText('current-source', 'noLocation');
+      byId('current-accuracy').textContent = '—';
+      insidePoiIds.clear();
+      selectedPoiId = null;
+      pendingAutoEntry = null;
+    }
+    cancelAddress();
+    showAddress(t('locationUnknown'), '—', '—', 'locationUnknown');
     gpsActive = true;
     const session = ++gpsSession;
     lastGpsRequest = -Infinity;
     byId('start-gps').disabled = true;
     byId('stop-gps').disabled = false;
-    setMessage('gps-status', 'Đang lấy vị trí', 'info');
-    setMessage('gps-message', 'Hãy cho phép trình duyệt truy cập vị trí khi được hỏi.');
-    setResult('loading', 'Đang chờ vị trí của bạn…', 'Cho phép định vị để bắt đầu khám phá.');
-    byId('result-source').textContent = 'Đang chờ GPS thật';
+    setMessage('gps-status', 'gettingLocation', 'info');
+    setMessage('gps-message', 'gpsPermissionPrompt');
+    setResult('loading', 'waitingForPosition', 'allowLocationHelp');
+    setText('result-source', 'waitingRealGps');
 
     try {
+      firstFixTimer = setTimeout(() => {
+        if (gpsActive && session === gpsSession) gpsError({ code: 3 });
+      }, FIRST_FIX_TIMEOUT_MS);
       const id = navigator.geolocation.watchPosition(
         (position) => { if (gpsActive && session === gpsSession) receivePosition(position); },
         (error) => { if (gpsActive && session === gpsSession) gpsError(error); },
@@ -509,39 +635,37 @@
     const latitude = parseCoordinate(byId('demo-lat'), -90, 90);
     const longitude = parseCoordinate(byId('demo-lng'), -180, 180);
     if (latitude === null || longitude === null) {
-      setMessage('simulation-message', 'Nhập latitude từ -90 đến 90 và longitude từ -180 đến 180 bằng số hợp lệ.', 'error');
+      setMessage('simulation-message', 'invalidCoordinatesHelp', 'error');
       byId(latitude === null ? 'demo-lat' : 'demo-lng').focus();
       return;
     }
-    const wasActive = gpsActive;
     stopTracking();
     cancelNearby();
-    if (wasActive) setMessage('gps-status', 'GPS đã dừng');
-    setMessage('gps-message', 'Đang dùng GPS giả lập. Định vị thật không chạy đồng thời.');
-    setMessage('simulation-message', 'Đang dùng tọa độ giả lập để kiểm tra địa điểm.', 'info');
+    setMessage('gps-status', 'gpsSimulated');
+    setMessage('gps-message', 'simulationTrackingHelp');
+    setMessage('simulation-message', 'simulationChecking', 'info');
     const location = { latitude, longitude };
     displayLocation(location, 'GPS giả lập');
     checkNearby(location, 'GPS giả lập');
   }
 
   function usePoiCoordinates(poi) {
-    const wasActive = gpsActive;
-    stopTracking();
-    cancelNearby();
-    if (wasActive) setMessage('gps-status', 'GPS đã dừng');
     byId('demo-lat').value = String(poi.latitude);
     byId('demo-lng').value = String(poi.longitude);
     byId('demo-lat').setAttribute('aria-invalid', 'false');
     byId('demo-lng').setAttribute('aria-invalid', 'false');
-    setMessage('simulation-message', `Đã chọn ${poi.name}. Bấm “Kiểm tra vị trí giả lập” để nhận kết quả.`, 'success');
-    setMessage('gps-message', 'Định vị thật đang tắt. Tọa độ đã chọn chỉ được gửi khi bạn bấm kiểm tra.');
-    setResult('idle', 'Tọa độ đã sẵn sàng', 'Bấm “Kiểm tra vị trí giả lập” để khám phá địa điểm vừa chọn.');
-    byId('result-source').textContent = 'Chưa kiểm tra tọa độ đã chọn';
+    setMessage('simulation-message', 'selectedPoiSimulation', 'success', { name: poi.name });
+    if (!gpsActive) {
+      setMessage('gps-message', 'selectedCoordinatesHelp');
+      setResult('idle', 'coordinatesReady', 'checkSelectedCoordinates');
+      setText('result-source', 'selectedCoordinatesUnchecked');
+    }
     byId('demo-lat').focus({ preventScroll: true });
     byId('simulation').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
   function renderPoiList(pois) {
+    loadedPois = pois;
     const list = byId('poi-list');
     list.replaceChildren();
     for (const poi of pois) {
@@ -549,22 +673,28 @@
       const active = poi.isActive === true;
       card.dataset.inactive = String(!active);
       card.querySelector('.poi-name').textContent = poi.name;
-      card.querySelector('.poi-category').textContent = poi.category === 'food' ? 'ẨM THỰC' : poi.category;
-      card.querySelector('.poi-address').textContent = poi.address || 'Chưa có địa chỉ';
+      card.querySelector('.poi-category').textContent = poi.category === 'food' ? t('foodCategory') : poi.category;
+      const savedAddress = [poi.streetAddress, poi.ward, poi.city]
+        .filter((part) => typeof part === 'string' && part.trim()).map((part) => part.trim()).join(', ');
+      card.querySelector('.poi-address').textContent = savedAddress || poi.address || t('noAddress');
       card.querySelector('.poi-coordinates').textContent = `${poi.latitude}, ${poi.longitude}`;
       card.querySelector('.poi-radius').textContent = `${poi.geofenceRadius} m`;
       const status = card.querySelector('.poi-status');
-      status.textContent = active ? 'Đang hoạt động' : 'Tạm dừng';
+      status.textContent = t(active ? 'active' : 'inactive');
       status.dataset.tone = active ? 'success' : 'neutral';
       const button = card.querySelector('.poi-use');
       button.disabled = !active;
-      button.setAttribute('aria-label', `Dùng tọa độ của ${poi.name} để giả lập`);
+      button.setAttribute('aria-label', t('usePoiCoordinatesLabel', { name: poi.name }));
+      for (const key of ['coordinates', 'radius', 'useCoordinates']) {
+        const label = card.querySelector(`[data-i18n="${key}"]`);
+        if (label) label.textContent = t(key);
+      }
       button.addEventListener('click', () => usePoiCoordinates(poi));
       list.append(card);
     }
-    byId('poi-count').textContent = `${pois.filter((poi) => poi.isActive === true).length} đang hoạt động / ${pois.length} địa điểm`;
+    setText('poi-count', 'poiCount', { active: pois.filter((poi) => poi.isActive === true).length, total: pois.length });
     byId('poi-message').hidden = pois.length > 0;
-    setMessage('poi-message', 'Chưa có POI. Hãy tạo địa điểm bằng API theo README, rồi bấm “Tải lại danh sách”.');
+    setMessage('poi-message', 'noPoiData');
   }
 
   async function loadPois() {
@@ -572,28 +702,71 @@
     byId('poi-list').setAttribute('aria-busy', 'true');
     byId('poi-list').replaceChildren();
     byId('poi-message').hidden = false;
-    setMessage('poi-message', 'Đang tải danh sách POI…');
-    byId('poi-count').textContent = 'Đang tải danh sách địa điểm…';
+    setMessage('poi-message', 'loadingPoisMessage');
+    setText('poi-count', 'loadingPois');
     try {
       const pois = await fetchJson('/api/pois', new AbortController());
-      if (!Array.isArray(pois)) throw new Error('Danh sách địa điểm không hợp lệ. Hãy thử tải lại.');
+      if (!Array.isArray(pois)) throw new Error(t('invalidPoiList'));
+      tourMap?.setPois(pois);
       renderPoiList(pois);
     } catch (error) {
-      setMessage('poi-message', `${error.message} Bấm “Tải lại danh sách” để thử lại.`, 'error');
-      byId('poi-count').textContent = 'Chưa tải được danh sách';
+      tourMap?.setPois([]);
+      tourMap?.setStatus(t('mapPoiLoadError'), 'error');
+      setMessage('poi-message', 'poiLoadRetry', 'error', { error: error.message });
+      setText('poi-count', 'poiListUnavailable');
     } finally {
       byId('reload-pois').disabled = false;
       byId('poi-list').setAttribute('aria-busy', 'false');
     }
   }
+  function applyTranslations() {
+    const language = byId('language').value;
+    const dictionary = translations[language] || translations[sourceLanguage];
 
+    document.documentElement.lang = language;
+    document.title = t('pageTitle');
+
+    document.querySelectorAll('[data-i18n]').forEach((element) => {
+      const key = element.dataset.i18n;
+      if (dictionary[key] !== undefined) {
+        element.textContent = dictionary[key];
+      }
+    });
+
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((element) => {
+      const key = element.dataset.i18nPlaceholder;
+      if (dictionary[key] !== undefined) {
+        element.placeholder = dictionary[key];
+      }
+    });
+    document.querySelectorAll('[data-i18n-aria-label]').forEach((element) => {
+      element.setAttribute('aria-label', t(element.dataset.i18nAriaLabel));
+    });
+    for (const [id, { key, params }] of dynamicText) {
+      if (id === 'result-source' && key === 'resultFrom' && currentLocation) {
+        params.source = t(currentLocation.source === 'GPS thật' ? 'gpsReal' : 'gpsSimulated');
+      }
+      byId(id).textContent = t(key, params);
+    }
+    if (addressDisplayKey) byId('current-street').textContent = t(addressDisplayKey);
+    if (displayedNearbyPoi) byId('nearest-distance').textContent =
+      `${displayedNearbyPoi.distance.toLocaleString(language, { maximumFractionDigits: 2 })} m`;
+    if (lastResultAt && dynamicText.get('result-time')?.key === 'updatedAt') {
+      setText('result-time', 'updatedAt', { time: lastResultAt.toLocaleTimeString(language) });
+    }
+  }
   function updateLanguage() {
     const language = byId('language').value;
+    applyTranslations();
     pendingAutoEntry = null;
-    if (autoEnabled && currentPoi) setMessage('auto-status', 'Đã đổi ngôn ngữ. Bấm Play để nghe; tự động dùng ngôn ngữ mới ở lần vào tiếp theo.');
-    byId('language-note').textContent = `Đang chọn: ${languageNames[language]} · Bấm Play hoặc bật tham quan tự động.`;
-    byId('audio-title').textContent = `Audio thuyết minh – ${languageNames[language]}`;
-    byId('narration-title').textContent = `Thuyết minh – ${languageNames[language]}`;
+    if (autoEnabled && currentPoi) setMessage('auto-status', 'autoPlayReady');
+    setText('tour-button-label', autoEnabled ? 'stopTour' : 'startTour');
+    setText('language-note', 'selectedLanguageHelp', { language: languageNames[language] });
+    setText('audio-title', 'audioLanguage', { language: languageNames[language] });
+    setText('narration-title', 'narrationLanguage', { language: languageNames[language] });
+    if (loadedPois) renderPoiList(loadedPois);
+    tourMap?.refreshLanguage?.();
+    access.refreshLanguage?.();
     try { localStorage.setItem('poi-demo-language', language); } catch { /* Vẫn dùng được khi storage bị chặn. */ }
     if (currentPoi) loadNarration(currentPoi);
   }
@@ -609,6 +782,14 @@
     const savedLanguage = localStorage.getItem('poi-demo-language');
     if (Object.prototype.hasOwnProperty.call(languageNames, savedLanguage)) byId('language').value = savedLanguage;
   } catch { /* Trình duyệt có thể không cho phép localStorage. */ }
+  setText('gps-status', 'gpsStatus');
+  setText('gps-message', 'gpsHelp');
+  setText('current-source', 'noLocation');
+  setText('simulation-message', 'simulationHint');
+  setText('result-source', 'locationUnchecked');
+  setText('poi-count', 'loadingPois');
+  setMessage('narration-status', 'narrationWaiting');
+  setMessage('audio-status', 'audioWaiting');
   updateLanguage();
   byId('language').addEventListener('change', updateLanguage);
   byId('start-gps').addEventListener('click', startGps);
@@ -620,13 +801,16 @@
   byId('generate-audio').addEventListener('click', generateAudio);
   byId('narration-audio').addEventListener('error', () => {
     if (byId('narration-audio').getAttribute('src')) {
-      setMessage('audio-status', 'Không tải được audio. Hãy thử tải lại nội dung.', 'error');
-      if (autoEnabled) setMessage('auto-status', 'Không tải được audio. Hãy thử tải lại nội dung.', 'error');
+      setMessage('audio-status', 'audioLoadError', 'error');
+      if (autoEnabled) setMessage('auto-status', 'audioLoadError', 'error');
     }
   });
   access.subscribe((valid) => {
     if (!valid) { disableAutoNarration(); clearNarration(); }
   });
-  window.addEventListener('pagehide', () => { disableAutoNarration(); stopTracking(); cancelNearby(); clearNarration(); });
+  window.addEventListener('pagehide', () => { disableAutoNarration(); stopTracking(); cancelNearby(); clearNarration(); tourMap?.destroy(); });
+  window.addEventListener('pageshow', (event) => { if (event.persisted) tourMap?.init(); });
+  tourMap?.init();
+  showAddress(t('locationUnknown'), '—', '—', 'locationUnknown');
   loadPois();
 })();

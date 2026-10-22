@@ -5,6 +5,7 @@ const vm = require('vm');
 const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
 const script = fs.readFileSync(path.join(__dirname, '../public/js/app.js'), 'utf8');
 const languageScript = fs.readFileSync(path.join(__dirname, '../public/js/poi-languages.js'), 'utf8');
+const translationScript = fs.readFileSync(path.join(__dirname, '../public/js/translations.js'), 'utf8');
 const jsonResponse = (data) => ({ ok: true, json: async () => data });
 const outside = { insideGeofence: false, nearestPoi: null, pois: [] };
 
@@ -37,10 +38,12 @@ async function setup(options = {}) {
   }
   const window = { isSecureContext: options.secure !== false, addEventListener: jest.fn() };
   window.TOUR_ACCESS = { active: () => true, headers: () => ({ Authorization: 'Bearer fixture' }), lose: jest.fn(), subscribe: (fn) => fn(true) };
+  if (options.map) window.TOUR_MAP = options.map;
   const mediaFetch = (url, requestOptions) => url.startsWith('/audio/')
-    ? Promise.resolve({ ok: true, blob: async () => ({ type: 'audio/wav', url }) }) : fetch(url, requestOptions);
-  vm.runInNewContext(languageScript + '\n' + script, {
-    document: { getElementById: (id) => elements[id], createElement },
+    ? Promise.resolve({ ok: true, blob: async () => ({ type: 'audio/wav', url }) })
+    : url.startsWith('/api/geocode/reverse?') ? Promise.resolve(jsonResponse({})) : fetch(url, requestOptions);
+  vm.runInNewContext(languageScript + '\n' + translationScript + '\n' + script, {
+    document: { getElementById: (id) => elements[id], createElement, documentElement: {}, querySelectorAll: () => [] },
     window, navigator: { geolocation: options.unsupported ? undefined : geolocation },
     localStorage, fetch: mediaFetch, AbortController, URLSearchParams, URL: { createObjectURL: (blob) => `blob:${blob.url}`, revokeObjectURL: jest.fn() }, TypeError,
     Date, setTimeout, clearTimeout,
@@ -59,6 +62,90 @@ beforeEach(() => { jest.useFakeTimers(); });
 afterEach(() => { jest.useRealTimers(); });
 
 describe('Frontend: GPS và request', () => {
+  it('thẻ POI ưu tiên các phần địa chỉ Admin đã lưu', async () => {
+    const { elements, fetch } = await setup();
+    const parts = {};
+    elements['poi-template'].content = { firstElementChild: { cloneNode: () => ({
+      dataset: {}, querySelector: (selector) => (parts[selector] ||= createElement()),
+    }) } };
+    elements['poi-list'].append = jest.fn();
+    fetch.mockResolvedValueOnce(jsonResponse([{ id: 'p1', name: 'POI', category: 'food',
+      address: 'Địa chỉ cũ', streetAddress: '12 Đường A', ward: 'Phường B', city: 'Đà Nẵng',
+      latitude: 10, longitude: 106, geofenceRadius: 50, isActive: true }]));
+    elements['reload-pois'].events.click();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(parts['.poi-address'].textContent).toBe('12 Đường A, Phường B, Đà Nẵng');
+    expect(fetch.mock.calls.filter(([url]) => url.startsWith('/api/geocode/reverse?'))).toHaveLength(0);
+  });
+
+  it('chọn tọa độ POI chỉ điền form, GPS thật tiếp tục chạy đến khi gửi giả lập', async () => {
+    const { elements, fetch, geolocation } = await setup();
+    const parts = {};
+    elements['poi-template'].content = { firstElementChild: { cloneNode: () => ({
+      dataset: {}, querySelector: (selector) => (parts[selector] ||= createElement()),
+    }) } };
+    elements['poi-list'].append = jest.fn();
+    elements['start-gps'].events.click();
+    geolocation.watchPosition.mock.calls[0][0]({ coords: { latitude: 10, longitude: 106, accuracy: 8 } });
+    await jest.advanceTimersByTimeAsync(0);
+    fetch.mockResolvedValueOnce(jsonResponse([{ id: 'p1', name: 'POI', category: 'food',
+      latitude: 11, longitude: 107, geofenceRadius: 50, isActive: true }]));
+    elements['reload-pois'].events.click();
+    await jest.advanceTimersByTimeAsync(0);
+    parts['.poi-use'].events.click();
+    expect(elements['demo-lat'].value).toBe('11');
+    expect(elements['current-source'].textContent).toBe('GPS thật');
+    expect(geolocation.clearWatch).not.toHaveBeenCalled();
+    submit(elements, '11', '107');
+    expect(geolocation.clearWatch).toHaveBeenCalledWith(0);
+    expect(elements['current-source'].textContent).toBe('GPS giả lập');
+  });
+
+  it('chuyển danh sách POI và cả vị trí GPS giả lập sang bản đồ, không tạo watcher khác', async () => {
+    const map = { init: jest.fn(), setPois: jest.fn(), setLocation: jest.fn(), setStatus: jest.fn(), destroy: jest.fn() };
+    const { elements, geolocation, fetch } = await setup({ map });
+    expect(map.init).toHaveBeenCalledTimes(1);
+    elements['poi-list'].append = jest.fn();
+    elements['poi-template'].content = { firstElementChild: {
+      cloneNode: () => ({ dataset: {}, querySelector: () => createElement() }),
+    } };
+    fetch.mockResolvedValueOnce(jsonResponse([{ id: 'p1', name: 'POI', latitude: 10, longitude: 106,
+      geofenceRadius: 50, isActive: true }]));
+    elements['reload-pois'].events.click();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(map.setPois).toHaveBeenLastCalledWith([expect.objectContaining({ id: 'p1' })]);
+    fetch.mockResolvedValueOnce(jsonResponse(outside));
+    submit(elements, '10', '106');
+    await jest.advanceTimersByTimeAsync(0);
+    expect(map.setLocation).toHaveBeenLastCalledWith(expect.objectContaining({
+      latitude: 10, longitude: 106, source: 'GPS giả lập',
+    }));
+    expect(geolocation.watchPosition).not.toHaveBeenCalled();
+  });
+
+  it('GPS thật dùng watcher hiện có để cập nhật bản đồ và dừng watcher như trước', async () => {
+    const map = { init: jest.fn(), setPois: jest.fn(), setLocation: jest.fn(), setStatus: jest.fn(), destroy: jest.fn() };
+    const { elements, geolocation } = await setup({ map });
+    elements['start-gps'].events.click();
+    expect(geolocation.watchPosition).toHaveBeenCalledTimes(1);
+    geolocation.watchPosition.mock.calls[0][0]({ coords: { latitude: 10, longitude: 106, accuracy: 20 } });
+    expect(map.setLocation).toHaveBeenLastCalledWith(expect.objectContaining({
+      latitude: 10, longitude: 106, accuracy: 20, source: 'GPS thật',
+    }));
+    elements['stop-gps'].events.click();
+    expect(geolocation.clearWatch).toHaveBeenCalledWith(0);
+  });
+
+  it('lỗi tải POI xóa marker cũ và báo lỗi bản đồ', async () => {
+    const map = { init: jest.fn(), setPois: jest.fn(), setLocation: jest.fn(), setStatus: jest.fn(), destroy: jest.fn() };
+    const { elements, fetch } = await setup({ map });
+    fetch.mockRejectedValueOnce(new TypeError('Network error'));
+    elements['reload-pois'].events.click();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(map.setPois).toHaveBeenLastCalledWith([]);
+    expect(map.setStatus).toHaveBeenCalledWith(expect.stringContaining('Không tải được địa điểm'), 'error');
+  });
+
   it('chỉ tải POI khi mở trang, chưa yêu cầu GPS', async () => {
     const { geolocation, fetch, elements } = await setup();
 
@@ -253,7 +340,7 @@ describe('Frontend Stage 5: nghe audio thủ công', () => {
     expect(elements['narration-audio'].hidden).toBe(true);
     expect(elements['narration-audio'].getAttribute('src')).toBeNull();
     expect(elements['generate-audio'].hidden).toBe(true);
-    expect(elements['audio-status'].textContent).toContain('Chưa có audio');
+    expect(elements['audio-status'].textContent).toContain('오디오가 없습니다');
   });
 
   it('thiếu narration không cho tạo audio', async () => {
@@ -263,7 +350,7 @@ describe('Frontend Stage 5: nghe audio thủ công', () => {
     await jest.advanceTimersByTimeAsync(0);
     expect(elements['generate-audio'].hidden).toBe(true);
     expect(elements['narration-audio'].hidden).toBe(true);
-    expect(elements['audio-status'].textContent).toContain('Chưa có nội dung');
+    expect(elements['audio-status'].textContent).toContain('no narration');
   });
 
   it.each(['https://evil.test/file.wav', '//evil.test/file.wav', '/audio/../outside.wav', '/audio/file.wav?secret=key', '/audio/nested/file.wav'])(
@@ -337,7 +424,7 @@ describe('Frontend Stage 5: nghe audio thủ công', () => {
     const { elements, fetch } = await arrive('/audio/narration_vi.wav');
     const calls = fetch.mock.calls.length;
     elements['narration-audio'].events.error();
-    expect(elements['audio-status'].textContent).toContain('Không tải được audio');
+    expect(elements['audio-status'].textContent).toContain('Không tải được âm thanh');
     expect(fetch).toHaveBeenCalledTimes(calls);
   });
 });
@@ -368,7 +455,8 @@ describe('Frontend: narration theo ngôn ngữ', () => {
       expect(elements['narration-text'].hidden).toBe(true);
       await jest.advanceTimersByTimeAsync(0);
       expect(fetch.mock.calls.at(-1)[0]).toBe(`/api/pois/food-1/narrations/${language}`);
-      expect(elements['narration-title'].textContent).toBe(`Thuyết minh – ${name}`);
+      const titles = { en: 'Narration', ja: 'ガイド', ko: '해설' };
+      expect(elements['narration-title'].textContent).toBe(`${titles[language]} – ${name}`);
       expect(elements['narration-text'].textContent).toBe(`Fixture ${language}`);
       expect(elements['narration-text'].attributes.lang).toBe(language);
     }
@@ -390,7 +478,7 @@ describe('Frontend: narration theo ngôn ngữ', () => {
     elements.language.value = 'ja';
     elements.language.events.change();
     await jest.advanceTimersByTimeAsync(0);
-    expect(elements['narration-status'].textContent).toBe('Chưa có nội dung thuyết minh cho ngôn ngữ này.');
+    expect(elements['narration-status'].textContent).toBe('この言語の音声ガイドはありません。');
     expect(elements['narration-text'].hidden).toBe(true);
     expect(elements['narration-text'].textContent).toBe('');
     expect(elements['retry-narration'].hidden).toBe(false);
@@ -465,7 +553,7 @@ describe('Frontend: narration theo ngôn ngữ', () => {
     elements.language.value = 'en';
     elements.language.events.change();
     await jest.advanceTimersByTimeAsync(0);
-    expect(elements['narration-status'].textContent).toContain('Không kết nối được Backend');
+    expect(elements['narration-status'].textContent).toContain('Could not connect to the backend');
     expect(elements['narration-panel'].attributes['aria-busy']).toBe('false');
     const text = '<img src=x onerror=alert(1)>\nText';
     fetch.mockResolvedValueOnce(narration('en', text));
@@ -486,6 +574,6 @@ describe('Frontend: narration theo ngôn ngữ', () => {
     elements.language.events.change();
     await jest.advanceTimersByTimeAsync(0);
     expect(elements['narration-text'].hidden).toBe(true);
-    expect(elements['narration-status'].textContent).toContain('không hợp lệ');
+    expect(elements['narration-status'].textContent).toContain('invalid');
   });
 });

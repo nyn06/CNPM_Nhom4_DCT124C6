@@ -6,6 +6,7 @@
   let disposed = false;
   const controllers = new Set();
   const message = (text) => { byId('account-status').textContent = text; };
+  const accountHint = byId('account-status').textContent;
   async function request(url, method = 'GET', data) {
     const controller = new AbortController();
     controllers.add(controller);
@@ -57,7 +58,7 @@
   async function mutate(work) {
     if (busy || disposed || auth.current()?.role !== 'ADMIN') return;
     busy = true; byId('create-account').disabled = true; byId('reload-accounts').disabled = true;
-    try { await work(); if (!disposed) { await load(); message('Đã cập nhật tài khoản. Các phiên cũ của tài khoản thay đổi đã bị thu hồi.'); } }
+    try { await work(); if (!disposed) { await load(); message(accountHint); } }
     catch (error) { if (!disposed) message(error instanceof TypeError || error.name === 'AbortError' ? 'Không kết nối được server. Hãy thử lại.' : error.message); }
     finally { busy = false; byId('create-account').disabled = false; byId('reload-accounts').disabled = false; }
   }

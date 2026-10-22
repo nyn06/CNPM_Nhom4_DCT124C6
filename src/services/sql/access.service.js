@@ -1,5 +1,6 @@
 ﻿const crypto = require('crypto');
 const accessRepository = require('../../repositories/access.repository');
+const shortCode = require('../activation-code');
 
 const DURATIONS = Object.freeze([15, 60, 120]);
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/;
@@ -22,19 +23,22 @@ class AccessService {
       throw failure('Cần cấu hình PUBLIC_ORIGIN là origin HTTP/HTTPS hợp lệ.', 503, 'INVALID_ORIGIN');
     }
     let code;
-    let voucher;
-    do {
+    let activationCode;
+    let voucher = null;
+    for (let attempt = 0; attempt < shortCode.MAX_CREATE_ATTEMPTS && !voucher; attempt++) {
       code = crypto.randomBytes(32).toString('hex');
+      activationCode = shortCode.generate();
       voucher = await accessRepository.createVoucher({
-        id: crypto.randomUUID(), codeHash: hash(code), durationMinutes: data.durationMinutes,
+        id: crypto.randomUUID(), codeHash: hash(code), shortCodeHash: shortCode.hash(activationCode), durationMinutes: data.durationMinutes,
         status: 'unused', createdAt: new Date(Date.now()).toISOString(),
         redeemedAt: null, expiresAt: null, sessionId: null,
       });
-    } while (!voucher);
+    }
+    if (!voucher) throw failure('Không tạo được mã kích hoạt duy nhất. Hãy thử lại.', 503, 'ACTIVATION_CODE_COLLISION');
     const url = new URL('/', origin);
     url.searchParams.set('voucher', code);
     return {
-      ...this._voucherInfo(voucher), code, activationUrl: url.href,
+      ...this._voucherInfo(voucher), code, activationCode, activationUrl: url.href,
       mobileReady: origin.protocol === 'https:' && !isLoopbackHost(origin.hostname),
       demoOnly: true,
     };
@@ -46,8 +50,9 @@ class AccessService {
 
   async redeem(data) {
     const code = typeof data?.code === 'string' ? data.code.trim() : '';
-    if (!TOKEN_PATTERN.test(code)) throw failure('Mã vé không hợp lệ.', 400, 'INVALID_VOUCHER');
-    const result = await accessRepository.redeemOnce(hash(code), (voucher) => {
+    const isShortCode = shortCode.PATTERN.test(code);
+    if (!isShortCode && !TOKEN_PATTERN.test(code)) throw failure('Mã kích hoạt không hợp lệ.', 400, 'INVALID_VOUCHER');
+    const result = await accessRepository.redeemOnce(isShortCode ? shortCode.hash(code) : hash(code), (voucher) => {
       const accessToken = crypto.randomBytes(32).toString('hex');
       const now = Date.now();
       return {
@@ -59,7 +64,7 @@ class AccessService {
         },
       };
     });
-    if (result.failure === 'invalid') throw failure('Mã vé không hợp lệ.', 400, 'INVALID_VOUCHER');
+    if (result.failure === 'invalid') throw failure('Mã kích hoạt không hợp lệ.', 400, 'INVALID_VOUCHER');
     if (result.failure === 'used') throw failure('Vé đã được kích hoạt. Hãy dùng mã vé khác.', 409, 'VOUCHER_USED');
     return { accessToken: result.accessToken, ...this.sessionInfo(result.session) };
   }

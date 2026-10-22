@@ -12,6 +12,7 @@ const element = () => ({
   removeAttribute(name) { delete this.attributes[name]; },
   append(...children) { this.children.push(...children); },
   replaceChildren(...children) { this.children = children; },
+  focus: jest.fn(),
 });
 function environment(html, fetch, auth) {
   const elements = Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => [match[1], element()]));
@@ -183,7 +184,11 @@ it('session expiry or API 401 hides controls and notifies content/media cleanup 
 
 it('logout requires CSRF and successful response discards client state', async () => {
   const ui = await adminUi();
-  await ui.elements['admin-logout'].events.click();
+  ui.elements['admin-logout'].events.click();
+  expect(ui.elements['admin-logout-modal'].hidden).toBe(false);
+  expect(ui.elements['admin-logout-cancel'].focus).toHaveBeenCalledTimes(1);
+  expect(ui.fetch).toHaveBeenCalledTimes(1);
+  await ui.elements['admin-logout-confirm'].events.click();
   const [url, options] = ui.fetch.mock.calls[1];
   expect(url).toBe('/api/auth/logout'); expect(options.method).toBe('POST');
   expect(options.headers['X-CSRF-Token']).toBe(csrf); expect(options.credentials).toBe('same-origin');
@@ -194,10 +199,22 @@ it('logout requires CSRF and successful response discards client state', async (
 it.each([403, 'network'])('logout failure %s does not falsely claim server session was invalidated', async (kind) => {
   const ui = await adminUi();
   if (kind === 'network') ui.state.network = true; else ui.state.logoutStatus = kind;
-  await ui.elements['admin-logout'].events.click();
+  ui.elements['admin-logout'].events.click();
+  await ui.elements['admin-logout-confirm'].events.click();
   expect(ui.auth.current()).not.toBeNull();
   expect(ui.elements['admin-session-status'].textContent).toContain(kind === 'network' ? 'có thể còn hiệu lực' : 'Chưa đăng xuất');
   expect(ui.elements['admin-logout'].disabled).toBe(false);
+});
+
+it('logout modal cancellation returns focus and does not send a logout request', async () => {
+  const ui = await adminUi();
+  ui.elements['admin-logout'].events.click();
+  expect(ui.elements['admin-logout-cancel'].focus).toHaveBeenCalledTimes(1);
+  ui.elements['admin-logout-cancel'].events.click();
+  expect(ui.elements['admin-logout-modal'].hidden).toBe(true);
+  expect(ui.elements['admin-logout'].focus).toHaveBeenCalledTimes(1);
+  expect(ui.fetch).toHaveBeenCalledTimes(1);
+  expect(ui.auth.current()).not.toBeNull();
 });
 
 it('bfcache restore reloads the protected page and never keeps old content exposed', async () => {

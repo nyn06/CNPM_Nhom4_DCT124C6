@@ -294,10 +294,18 @@ class PoiService {
       throw error;
     }
 
-    if (typeof poi.address !== 'string') {
+    if (typeof poi.address !== 'string' || poi.address.length > 500) {
       const error = new Error('address phải là chuỗi');
       error.statusCode = 400;
       throw error;
+    }
+
+    for (const field of ['streetAddress', 'ward', 'city']) {
+      if (poi[field] != null && (typeof poi[field] !== 'string' || poi[field].length > (field === 'streetAddress' ? 255 : 150))) {
+        const error = new Error(`${field} phải là chuỗi hợp lệ`);
+        error.statusCode = 400;
+        throw error;
+      }
     }
 
     if (typeof poi.isActive !== 'boolean') {
@@ -311,6 +319,9 @@ class PoiService {
       description: poi.description.trim(),
       category: poi.category.trim(),
       address: poi.address.trim(),
+      streetAddress: poi.streetAddress?.trim() || null,
+      ward: poi.ward?.trim() || null,
+      city: poi.city?.trim() || null,
       latitude: poi.latitude,
       longitude: poi.longitude,
       geofenceRadius: poi.geofenceRadius,

@@ -64,6 +64,9 @@ describe('POST /api/pois', () => {
     expect(uuidVersion(res.body.id)).toBe(4);
     expect(res.body).toEqual({
       ...validPoi,
+      streetAddress: null,
+      ward: null,
+      city: null,
       id: expect.any(String),
       isActive: true,
       createdAt: expect.any(String),

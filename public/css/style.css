@@ -74,8 +74,7 @@ dd { margin: 0; font-size: 13px; font-weight: 550; font-variant-numeric: tabular
 .coordinates dd { font-family: Consolas, "SFMono-Regular", monospace; }
 .gps-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .tour-controls { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
-.tour-demo-option { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: var(--muted); font-size: 12px; cursor: pointer; }
-.tour-demo-option input { width: 16px; height: 16px; min-height: 0; margin: 0; accent-color: var(--green); }
+.location-details dd { max-width: 60%; font-family: inherit; text-align: right; overflow-wrap: anywhere; }
 #toggle-tour[aria-pressed="true"] { background: var(--green); }
 .button { border: 1px solid transparent; border-radius: 8px; padding: 11px 13px; display: inline-flex; justify-content: center; align-items: center; gap: 8px; min-height: 44px; font-size: 12px; font-weight: 650; text-decoration: none; transition: background .15s, border-color .15s; }
 .button .icon { width: 17px; height: 17px; }
@@ -100,22 +99,19 @@ input[aria-invalid="true"] { border-color: #b93d31; }
 .discovery-column { display: grid; gap: 18px; min-width: 0; }
 .discovery-panel { overflow: hidden; background: #fdfef9; }
 .result-header { padding: 23px 26px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.result-empty { padding: 20px 40px 36px; text-align: center; min-height: 337px; }
-.location-art { height: 150px; width: 230px; position: relative; margin: 0 auto 4px; }
-.orbit { border: 1px solid #dce4d7; position: absolute; border-radius: 50%; left: 50%; top: 50%; transform: translate(-50%, -50%); }
-.orbit-one { width: 112px; height: 112px; background: #f1f5ec; }
-.orbit-two { width: 188px; height: 142px; border-style: dashed; transform: translate(-50%, -50%) rotate(-22deg); }
-.art-pin { position: absolute; left: 92px; top: 44px; width: 49px; height: 59px; display: grid; place-items: center; border-radius: 19px 19px 19px 4px; transform: rotate(-9deg); background: #e1e9d9; color: #50774d; box-shadow: 0 9px 0 #eaf0e3; }
-.art-pin .icon { width: 28px; height: 28px; transform: rotate(9deg); }
-.orbit-dot { position: absolute; top: 43px; left: 25px; width: 8px; height: 8px; border-radius: 50%; background: #c36b43; box-shadow: 0 0 0 5px #f9eee4; }
-.art-cross { position: absolute; right: 17px; bottom: 35px; color: #88a17b; font-size: 21px; font-weight: 300; }
+.map-shell { position: relative; margin: 18px 18px 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #edf0e8; }
+#poi-map { width: 100%; height: 360px; }
+.map-recenter { position: absolute; z-index: 500; top: 10px; right: 10px; min-height: 38px; padding: 7px 10px; background: #fffefa; box-shadow: 0 2px 9px rgb(0 0 0 / 16%); }
+.map-status { margin: 8px 20px 0; }
+.map-status[data-tone="error"] { color: #a92e22; }
+.result-empty { padding: 20px 40px 30px; text-align: center; min-height: 150px; }
 .result-empty .eyebrow { margin: 0 0 9px; font-size: 9px; }
 .result-empty h3 { font-size: 24px; letter-spacing: -.7px; font-weight: 650; line-height: 1.35; }
 .result-empty > p:last-child { max-width: 390px; margin: 10px auto 0; color: var(--muted); font-size: 13px; }
 .result-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; border-top: 1px solid var(--line); padding: 13px 26px; color: var(--muted); font-size: 11px; background: #f8f9f3; }
 .discovery-panel[data-state="inside"] { border-color: #acc6a8; }
 .discovery-panel[data-state="error"] #result-title { color: #a92e22; }
-.nearest-card { padding: 27px 30px; min-height: 337px; background: linear-gradient(135deg, #fdfef9, #eff5e9); }
+.nearest-card { padding: 27px 30px; min-height: 220px; background: linear-gradient(135deg, #fdfef9, #eff5e9); }
 .arrival-label { display: flex; align-items: center; gap: 7px; color: var(--green); font-size: 10px; letter-spacing: 1.3px; font-weight: 700; }
 .arrival-label .icon { width: 17px; height: 17px; }
 .nearest-card h3 { margin: 13px 0 4px; font-size: clamp(24px, 3vw, 34px); line-height: 1.25; letter-spacing: -.8px; overflow-wrap: anywhere; }
@@ -184,7 +180,10 @@ input[aria-invalid="true"] { border-color: #b93d31; }
   .desktop-break { display: none; }
   .hero > p { font-size: 14px; }
   .workspace { grid-template-columns: 1fr; }
-  .result-empty { min-height: 330px; }
+  .map-shell { margin: 14px 12px 0; }
+  #poi-map { height: 300px; }
+  .map-recenter { max-width: 52%; }
+  .result-empty { min-height: 150px; }
   .poi-section { margin-top: 30px; }
   .poi-section-heading { align-items: flex-start; flex-direction: column; }
   .poi-section h2 { font-size: 23px; }
@@ -196,4 +195,42 @@ input[aria-invalid="true"] { border-color: #b93d31; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .button { transition: none; }
+}
+
+/* Công cụ quét và tải ảnh QR */
+.qr-tools {
+  margin-top: 12px;
+}
+
+.qr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.qr-actions .button {
+  flex: 1;
+}
+
+#qr-camera-panel {
+  margin-top: 12px;
+}
+
+#qr-video {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  background: #242e2b;
+  border-radius: 10px;
+}
+
+@media (max-width: 600px) {
+  .qr-actions {
+    flex-direction: column;
+  }
+
+  .qr-actions .button {
+    width: 100%;
+  }
 }

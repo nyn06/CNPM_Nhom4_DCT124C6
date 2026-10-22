@@ -25,10 +25,38 @@
   let listController = null;
   let selectionController = null;
   let contentController = null;
+  let contentNoticeTimer = null;
+  let contentNoticeRevision = 0;
 
   function message(id, text, tone = 'neutral') {
-    byId(id).textContent = text;
-    byId(id).dataset.tone = tone;
+    const target = byId(id);
+    target.textContent = text;
+    target.dataset.tone = tone;
+    if (id === 'action-status') target.hidden = !text;
+  }
+
+  function clearContentNotice() {
+    contentNoticeRevision++;
+    clearTimeout(contentNoticeTimer);
+    contentNoticeTimer = null;
+    byId('content-action-notice').hidden = true;
+    byId('content-action-text').textContent = '';
+    byId('dismiss-content-action').hidden = true;
+  }
+
+  function contentNotice(text, tone = 'info') {
+    clearContentNotice();
+    const revision = contentNoticeRevision;
+    const notice = byId('content-action-notice');
+    notice.dataset.tone = tone;
+    notice.setAttribute('role', tone === 'error' ? 'alert' : 'status');
+    notice.setAttribute('aria-live', tone === 'error' ? 'assertive' : 'polite');
+    byId('content-action-text').textContent = text;
+    byId('dismiss-content-action').hidden = tone !== 'error';
+    notice.hidden = false;
+    if (tone === 'success') contentNoticeTimer = setTimeout(() => {
+      if (!disposed && revision === contentNoticeRevision) clearContentNotice();
+    }, 5000);
   }
 
   function safeError(text, statusCode) {
@@ -90,13 +118,13 @@
     byId('vi-text').disabled = blocked || contentLoading || !contentReady;
     byId('save-vi').disabled = blocked || !contentReady || !byId('vi-text').value.trim();
     byId('translate').disabled = blocked || !contentReady || !hasText(sourceLanguage) || viDirty();
+    byId('generate-all-audio').disabled = blocked || contentLoading || !contentReady || !selectedPoi || viDirty();
     byId('reload-content').disabled = blocked || contentLoading || !selectedPoi || viDirty();
     for (const row of rows) {
       row.manage.disabled = mutating;
       row.remove.disabled = mutating;
     }
     for (const [language, card] of cards) {
-      card.generate.disabled = blocked || !contentReady || !hasText(language) || viDirty();
       card.listen.disabled = blocked || !contentReady || !validAudioUrl(narrations[language]?.audioUrl);
     }
   }
@@ -123,12 +151,12 @@
         : narration?.audioUrl ? 'Đường dẫn audio không hợp lệ.' : 'Chưa có audio';
       card.audioStatus.dataset.tone = audioExists ? 'success' : narration?.audioUrl ? 'error' : 'neutral';
       card.listen.hidden = !audioExists;
-      card.generate.textContent = audioExists ? 'Tạo lại audio' : 'Tạo audio';
     }
     updateControls();
   }
 
   function clearSelection() {
+    clearContentNotice();
     selectionRevision++;
     contentRevision++;
     selectionController?.abort();
@@ -143,6 +171,7 @@
     contentReady = false;
     byId('vi-text').value = '';
     byId('poi-panel').hidden = true;
+    window.ADMIN_POI_MAP.clear();
     byId('content-panel').hidden = true;
     byId('selection-status').hidden = false;
     byId('poi-panel').setAttribute('aria-busy', 'false');
@@ -214,10 +243,13 @@
 
   function fillPoiForm(poi) {
     for (const [field, key] of [['name', 'name'], ['description', 'description'], ['category', 'category'],
-      ['address', 'address'], ['latitude', 'latitude'], ['longitude', 'longitude'], ['radius', 'geofenceRadius']]) {
+      ['street-address', 'streetAddress'], ['ward', 'ward'], ['city', 'city'], ['radius', 'geofenceRadius']]) {
       byId(`poi-${field}`).value = String(poi[key] ?? '');
       byId(`poi-${field}`).setAttribute('aria-invalid', 'false');
     }
+    const legacyAddress = byId('poi-legacy-address');
+    legacyAddress.hidden = !poi.address || !!(poi.streetAddress || poi.ward || poi.city);
+    legacyAddress.textContent = legacyAddress.hidden ? '' : `Địa chỉ đã lưu: ${poi.address}`;
     byId('poi-active').checked = poi.isActive === true;
   }
 
@@ -302,6 +334,7 @@
       byId('poi-panel').hidden = false;
       byId('content-panel').hidden = false;
       byId('selection-status').hidden = true;
+      window.ADMIN_POI_MAP.load(poi);
       markSelectedRow();
       return await loadContent();
     } catch (error) {
@@ -326,56 +359,74 @@
     fillPoiForm({ category: 'food', geofenceRadius: 50, isActive: true });
     byId('poi-form-title').textContent = 'Thêm địa điểm mới';
     byId('selected-id').textContent = 'Lưu địa điểm để bắt đầu chuẩn bị thuyết minh.';
-    byId('save-poi').textContent = 'Tạo POI';
+    byId('save-poi').textContent = 'Tạo địa điểm';
     byId('delete-selected').hidden = true;
     byId('poi-panel').hidden = false;
     byId('selection-status').hidden = true;
-    message('action-status', 'Nhập thông tin và tọa độ của địa điểm mới.');
+    window.ADMIN_POI_MAP.load(null);
+    message('action-status', 'Đang thêm địa điểm mới.');
     updateControls();
     byId('poi-name').focus();
   }
 
   function readPoiForm() {
     const data = { isActive: byId('poi-active').checked };
-    for (const field of ['name', 'description', 'category', 'address']) {
+    for (const field of ['name', 'description', 'category']) {
       const input = byId(`poi-${field}`);
       data[field] = input.value.trim();
-      const invalid = field !== 'address' && !data[field];
+      const invalid = !data[field];
       input.setAttribute('aria-invalid', String(invalid));
       if (invalid) { input.focus(); throw safeError('Tên, mô tả và loại địa điểm không được để trống.'); }
     }
-    for (const [field, key, min, max] of [['latitude', 'latitude', -90, 90], ['longitude', 'longitude', -180, 180], ['radius', 'geofenceRadius', 0, Infinity]]) {
+    for (const [field, key] of [['street-address', 'streetAddress'], ['ward', 'ward'], ['city', 'city']]) {
+      data[key] = byId(`poi-${field}`).value.trim();
+    }
+    data.address = [data.streetAddress, data.ward, data.city].filter(Boolean).join(', ') || selectedPoi?.address || '';
+    const location = window.ADMIN_POI_MAP.location();
+    if (!location) throw safeError('Đặt ghim và xác nhận vị trí trước khi lưu.');
+    Object.assign(data, location);
+    for (const [field, key, min, max] of [['radius', 'geofenceRadius', 0, Infinity]]) {
       const input = byId(`poi-${field}`);
       const value = input.value.trim();
       const number = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value) ? Number(value) : NaN;
       const invalid = !Number.isFinite(number) || number < min || number > max || (key === 'geofenceRadius' && number <= 0);
       input.setAttribute('aria-invalid', String(invalid));
-      if (invalid) { input.focus(); throw safeError('Latitude phải từ -90 đến 90, longitude từ -180 đến 180 và bán kính phải lớn hơn 0.'); }
+      if (invalid) { input.focus(); throw safeError('Bán kính phải là số lớn hơn 0.'); }
       data[key] = number;
     }
     return data;
   }
 
-  async function mutate(label, work, affectedId) {
+  async function mutate(label, work, affectedId, contentAction = null) {
     if (mutating || disposed) return;
     mutating = true;
+    const button = contentAction ? byId(contentAction.buttonId) : null;
+    const originalLabel = button?.textContent;
+    if (button) button.textContent = contentAction.busyLabel;
     stopPreview();
     byId('poi-panel').setAttribute('aria-busy', 'true');
-    message('action-status', label, 'info');
+    if (contentAction) contentNotice(label);
+    else message('action-status', label, 'info');
     updateControls();
     try {
       const success = await work();
-      if (!disposed) message('action-status', success, 'success');
+      if (!disposed) {
+        if (contentAction) contentNotice(success.text, success.tone);
+        else message('action-status', success, 'success');
+      }
     } catch (error) {
       if (disposed) return;
       if (error.statusCode === 404) {
         if (selectedPoi?.id === affectedId) clearSelection();
         await loadPois();
       }
-      message('action-status', error.safe ? error.message : 'Chưa hoàn tất thao tác. Hãy tải lại và thử lại.', 'error');
+      const detail = error.safe ? error.message : 'Chưa hoàn tất thao tác. Hãy tải lại và thử lại.';
+      if (contentAction && !byId('content-panel').hidden) contentNotice(`${contentAction.failure} ${detail}`, 'error');
+      else message(contentAction ? 'selection-status' : 'action-status', detail, 'error');
     } finally {
       if (!disposed) {
         mutating = false;
+        if (button) button.textContent = originalLabel;
         byId('poi-panel').setAttribute('aria-busy', 'false');
         updateControls();
       }
@@ -400,7 +451,7 @@
         message('draft-status', 'Có nội dung VI chưa lưu. Hãy lưu trước khi dịch hoặc tạo audio.');
         updateControls();
       }
-      return `${id ? 'Đã lưu thay đổi POI.' : 'Đã tạo POI.'}${refreshed ? ' Địa điểm đã được mở để quản lý.' : ' Bấm tải lại để kiểm tra nội dung.'}`;
+      return `${id ? 'Đã lưu thay đổi địa điểm.' : 'Đã tạo địa điểm.'}${refreshed ? ' Địa điểm đã được mở để quản lý.' : ' Bấm tải lại để kiểm tra nội dung.'}`;
     }, id);
   }
 
@@ -420,41 +471,118 @@
     event.preventDefault();
     if (mutating || !selectedPoi || !contentReady) return;
     const text = byId('vi-text').value.trim();
-    if (!text) { byId('vi-text').setAttribute('aria-invalid', 'true'); message('action-status', 'Nhập nội dung tiếng Việt trước khi lưu.', 'error'); return; }
+    if (!text) { byId('vi-text').setAttribute('aria-invalid', 'true'); contentNotice('Nhập nội dung tiếng Việt trước khi lưu.', 'error'); return; }
     const id = selectedPoi.id;
     mutate('Đang lưu nội dung tiếng Việt…', async () => {
-      await requestJson(`${poiUrl(id)}/narrations/${sourceLanguage}`, { method: 'PUT', body: { text } });
-      if (disposed) return '';
+      const saved = await requestJson(`${poiUrl(id)}/narrations/${sourceLanguage}`, { method: 'PUT', body: { text } });
+      if (saved?.poiId !== id || saved.language !== sourceLanguage || saved.text !== text) {
+        throw safeError('Phản hồi lưu nội dung chưa được xác nhận. Hãy tải lại để kiểm tra.');
+      }
+      if (disposed) return null;
       const refreshed = await loadContent();
       await loadPois();
-      return refreshed ? 'Đã lưu tiếng Việt và cập nhật trạng thái bản dịch/audio theo backend.' : 'Đã lưu tiếng Việt. Bấm tải lại nội dung để kiểm tra trạng thái mới.';
-    }, id);
+      return refreshed
+        ? { text: 'Đã lưu nội dung tiếng Việt thành công.', tone: 'success' }
+        : { text: 'Đã lưu tiếng Việt nhưng chưa tải lại được nội dung. Hãy tải lại để kiểm tra.', tone: 'error' };
+    }, id, { buttonId: 'save-vi', busyLabel: 'Đang lưu...', failure: 'Không thể lưu nội dung tiếng Việt. Vui lòng thử lại.' });
   }
 
   function translate() {
     if (mutating || !selectedPoi || !contentReady) return;
-    if (!hasText(sourceLanguage) || viDirty()) { message('action-status', 'Hãy lưu nội dung tiếng Việt trước khi dịch.', 'error'); return; }
+    if (!hasText(sourceLanguage) || viDirty()) { contentNotice('Hãy lưu nội dung tiếng Việt trước khi dịch.', 'error'); return; }
     const id = selectedPoi.id;
-    mutate('Đang dịch VI sang EN/JA/KO…', async () => {
-      await requestJson(`${poiUrl(id)}/translations`, { method: 'POST', body: { targetLanguages: targets }, scope: 'translation', timeout: 70000 });
-      if (disposed) return '';
+    mutate('Đang dịch nội dung sang EN/JA/KO...', async () => {
+      const translated = await requestJson(`${poiUrl(id)}/translations`, { method: 'POST', body: { targetLanguages: targets }, scope: 'translation', timeout: 70000 });
+      if (disposed) return null;
       const refreshed = await loadContent();
       await loadPois();
-      return refreshed ? 'Đã dịch và tải lại nội dung EN/JA/KO.' : 'Đã dịch. Bấm tải lại nội dung để kiểm tra kết quả.';
-    }, id);
+      if (!refreshed) return { text: 'Đã gửi yêu cầu dịch nhưng chưa tải lại được nội dung. Hãy tải lại để kiểm tra.', tone: 'error' };
+      const confirmed = targets.filter((language) => typeof translated?.translations?.[language]?.text === 'string'
+        && translated.translations[language].text.trim() && narrations[language]?.text === translated.translations[language].text);
+      return confirmed.length === targets.length && translated?.poiId === id
+        ? { text: 'Đã dịch và tải nội dung EN/JA/KO thành công.', tone: 'success' }
+        : { text: `Đã xác nhận ${confirmed.length}/${targets.length} bản dịch EN/JA/KO. Hãy tải lại và kiểm tra các ngôn ngữ còn thiếu.`, tone: 'error' };
+    }, id, { buttonId: 'translate', busyLabel: 'Đang dịch...', failure: 'Không thể hoàn tất dịch nội dung. Vui lòng kiểm tra và thử lại.' });
   }
 
-  function generateAudio(language) {
-    if (mutating || !selectedPoi || !contentReady) return;
-    if (!hasText(language) || viDirty()) { message('action-status', 'Cần có nội dung đã lưu cho ngôn ngữ này trước khi tạo audio.', 'error'); return; }
+  async function generateAllAudio() {
+    if (mutating || !selectedPoi || !contentReady || viDirty()) {
+      if (viDirty()) contentNotice('Hãy lưu nội dung tiếng Việt trước khi tạo audio.', 'error');
+      return;
+    }
     const id = selectedPoi.id;
-    mutate(`Đang tạo audio ${languageNames[language]}…`, async () => {
-      await requestJson(`${poiUrl(id)}/narrations/${language}/audio`, { method: 'POST', scope: 'audio', timeout: 130000 });
-      if (disposed) return '';
-      const refreshed = await loadContent();
-      await loadPois();
-      return refreshed ? `Đã tạo audio ${languageNames[language]}. Bấm “Nghe” để nghe thử.` : 'Đã tạo audio. Bấm tải lại nội dung để lấy metadata mới.';
-    }, id);
+    const revision = selectionRevision;
+    mutating = true;
+    const audioButton = byId('generate-all-audio');
+    const originalAudioLabel = audioButton.textContent;
+    audioButton.textContent = 'Đang tạo audio...';
+    stopPreview();
+    byId('content-panel').setAttribute('aria-busy', 'true');
+    updateControls();
+    try {
+      contentNotice('Đang tạo audio cho 4 ngôn ngữ...');
+      if (!await loadContent() || disposed || revision !== selectionRevision || selectedPoi?.id !== id) {
+        if (!disposed) contentNotice('Không thể hoàn tất tạo audio. Vui lòng kiểm tra và thử lại. Chưa kiểm tra được nội dung mới nhất.', 'error');
+        return;
+      }
+      byId('content-panel').setAttribute('aria-busy', 'true');
+      const missing = languages.filter((language) => !hasText(language));
+      if (missing.length) {
+        contentNotice(`Thiếu nội dung đã lưu: ${missing.map((language) => language.toUpperCase()).join(', ')}. Hãy lưu hoặc dịch nội dung trước khi tạo audio.`, 'error');
+        return;
+      }
+      const pending = languages.filter((language) => !validAudioUrl(narrations[language]?.audioUrl));
+      if (!pending.length) {
+        contentNotice('Audio của cả 4 ngôn ngữ đã có. Bấm “Nghe” để nghe thử.', 'success');
+        return;
+      }
+      const expectedTexts = Object.fromEntries(languages.map((language) => [language, narrations[language].text]));
+      const completed = languages.filter((language) => !pending.includes(language));
+      const failed = [];
+      let processed = completed.length;
+      let changed = false;
+      let accessError = null;
+      for (const language of pending) {
+        if (disposed || revision !== selectionRevision || selectedPoi?.id !== id) return;
+        contentNotice(`Đang tạo audio: ${processed}/${languages.length} · ${languageNames[language]}…`);
+        try {
+          const result = await requestJson(`${poiUrl(id)}/narrations/${language}/audio`,
+            { method: 'POST', scope: 'audio', timeout: 130000 });
+          if (disposed || revision !== selectionRevision || selectedPoi?.id !== id) return;
+          if (result?.poiId !== id || result.language !== language || result.text !== expectedTexts[language]
+            || !validAudioUrl(result.audioUrl)) throw safeError('Metadata audio không hợp lệ. Hãy tải lại nội dung.', 409);
+          narrations[language] = result;
+          completed.push(language);
+          renderNarrations();
+        } catch (error) {
+          if (disposed) return;
+          failed.push(language);
+          if (error.statusCode === 401 || error.statusCode === 403) { accessError = error; break; }
+          if (error.statusCode === 404 || error.statusCode === 409) { changed = true; break; }
+        }
+        processed++;
+        contentNotice(`Đang tạo audio: ${processed}/${languages.length}`);
+      }
+      if (disposed || revision !== selectionRevision || selectedPoi?.id !== id) return;
+      if (accessError) contentNotice(`Không thể hoàn tất tạo audio. Vui lòng kiểm tra và thử lại. ${accessError.message}`, 'error');
+      else if (changed) {
+        await loadContent();
+        contentNotice('Nội dung hoặc POI đã thay đổi trong lúc tạo audio. Đã tải lại trạng thái; hãy kiểm tra rồi thử lại.', 'error');
+      } else {
+        const success = completed.map((language) => language.toUpperCase()).join(', ');
+        const errors = failed.map((language) => language.toUpperCase()).join(', ');
+        contentNotice(errors
+          ? `Không thể hoàn tất tạo audio. Vui lòng kiểm tra và thử lại. Audio sẵn sàng ${completed.length}/${languages.length}: ${success || 'chưa có'}. Tạo thất bại ${failed.length}/${languages.length}: ${errors}. Bấm lại để thử những ngôn ngữ chưa có audio.`
+          : 'Đã tạo audio 4 ngôn ngữ thành công.', errors ? 'error' : 'success');
+      }
+    } finally {
+      if (!disposed) {
+        mutating = false;
+        audioButton.textContent = originalAudioLabel;
+        byId('content-panel').setAttribute('aria-busy', 'false');
+        updateControls();
+      }
+    }
   }
 
   async function listen(language) {
@@ -473,13 +601,11 @@
     const element = byId('language-template').content.firstElementChild.cloneNode(true);
     const card = {
       text: element.querySelector('.language-text'), textStatus: element.querySelector('.text-status'),
-      audioStatus: element.querySelector('.audio-status'), generate: element.querySelector('.generate-audio'), listen: element.querySelector('.listen-audio'),
+      audioStatus: element.querySelector('.audio-status'), listen: element.querySelector('.listen-audio'),
     };
     element.querySelector('.language-name').textContent = `${language.toUpperCase()} · ${languageNames[language]}`;
     card.text.setAttribute('lang', language);
-    card.generate.setAttribute('aria-label', `Tạo audio ${languageNames[language]}`);
     card.listen.setAttribute('aria-label', `Nghe ${languageNames[language]}`);
-    card.generate.addEventListener('click', () => generateAudio(language));
     card.listen.addEventListener('click', () => listen(language));
     cards.set(language, card);
     byId('language-cards').append(element);
@@ -491,6 +617,8 @@
   byId('delete-selected').addEventListener('click', () => deletePoi(selectedPoi));
   byId('vi-form').addEventListener('submit', saveVietnamese);
   byId('translate').addEventListener('click', translate);
+  byId('generate-all-audio').addEventListener('click', generateAllAudio);
+  byId('dismiss-content-action').addEventListener('click', clearContentNotice);
   byId('reload-content').addEventListener('click', () => { if (!mutating && !contentLoading && !viDirty()) loadContent(); });
   byId('vi-text').addEventListener('input', () => {
     message('draft-status', viDirty() ? 'Có nội dung VI chưa lưu. Hãy lưu trước khi dịch hoặc tạo audio.' : '');
@@ -501,6 +629,7 @@
   });
   window.addEventListener('pagehide', () => {
     disposed = true;
+    clearContentNotice();
     listController?.abort();
     selectionController?.abort();
     contentController?.abort();
@@ -509,6 +638,7 @@
   });
   auth.onLost(() => {
     disposed = true;
+    clearContentNotice();
     for (const controller of controllers) controller.abort();
     stopPreview();
   });

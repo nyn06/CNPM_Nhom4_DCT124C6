@@ -3,7 +3,8 @@ const { sql, getPool, request, iso, uuid } = require('../../database/repository'
 function mapPoi(row) {
   return {
     id: uuid(row.Id), name: row.Name, description: row.Description, category: row.Category,
-    address: row.Address, latitude: row.Latitude, longitude: row.Longitude,
+    address: row.Address, streetAddress: row.StreetAddress, ward: row.Ward, city: row.City,
+    latitude: row.Latitude, longitude: row.Longitude,
     geofenceRadius: row.GeofenceRadius, isActive: row.IsActive,
     createdAt: iso(row.CreatedAt), updatedAt: iso(row.UpdatedAt), narrations: {},
   };
@@ -21,8 +22,8 @@ async function attachNarrations(pois) {
 class SqlPoiRepository {
   async create(poi) {
     await request(await getPool(), poi).query(`INSERT dbo.POIs
-      (Id, Name, Description, Category, Address, Latitude, Longitude, GeofenceRadius, IsActive, CreatedAt, UpdatedAt)
-      VALUES (@id, @name, @description, @category, @address, @latitude, @longitude, @geofenceRadius,
+      (Id, Name, Description, Category, Address, StreetAddress, Ward, City, Latitude, Longitude, GeofenceRadius, IsActive, CreatedAt, UpdatedAt)
+      VALUES (@id, @name, @description, @category, @address, @streetAddress, @ward, @city, @latitude, @longitude, @geofenceRadius,
       @isActive, @createdAt, @updatedAt)`);
     return { ...poi, id: uuid(poi.id) };
   }
@@ -44,10 +45,12 @@ class SqlPoiRepository {
       const old = mapPoi(current);
       const poi = { ...old, ...patch };
       const fields = { id, name: poi.name, description: poi.description, category: poi.category,
-        address: poi.address, latitude: poi.latitude, longitude: poi.longitude,
+        address: poi.address, streetAddress: poi.streetAddress, ward: poi.ward, city: poi.city,
+        latitude: poi.latitude, longitude: poi.longitude,
         geofenceRadius: poi.geofenceRadius, isActive: poi.isActive, updatedAt: poi.updatedAt };
       await request(tx, fields).query(`UPDATE dbo.POIs SET Name=@name, Description=@description,
-        Category=@category, Address=@address, Latitude=@latitude, Longitude=@longitude,
+        Category=@category, Address=@address, StreetAddress=@streetAddress, Ward=@ward, City=@city,
+        Latitude=@latitude, Longitude=@longitude,
         GeofenceRadius=@geofenceRadius, IsActive=@isActive, UpdatedAt=@updatedAt WHERE Id=TRY_CONVERT(uniqueidentifier, @id)`);
       if (Object.hasOwn(patch, 'narrations')) {
         await request(tx, { id }).query('DELETE dbo.POINarrations WHERE POIId=TRY_CONVERT(uniqueidentifier, @id)');

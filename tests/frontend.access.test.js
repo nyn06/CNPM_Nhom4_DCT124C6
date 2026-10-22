@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
-const scripts = ['poi-languages.js', 'access.js', 'app.js'].map((file) => fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8')).join('\n');
+const scripts = ['poi-languages.js', 'translations.js', 'access.js', 'app.js'].map((file) => fs.readFileSync(path.join(__dirname, '../public/js', file), 'utf8')).join('\n');
 const token = 'b'.repeat(64);
 const code = 'c'.repeat(64);
 const json = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
@@ -59,7 +59,7 @@ async function setup({ href = 'http://localhost:3000/', savedToken, sessionRespo
     addEventListener: (name, callback) => { (events[name] ||= []).push(callback); },
     history: { replaceState: jest.fn((state, title, value) => { window.location.href = new URL(value, window.location.href).href; }) },
   };
-  const document = { hidden: false, getElementById: (id) => elements[id], createElement: element, addEventListener: (name, callback) => { documentEvents[name] = callback; } };
+  const document = { hidden: false, documentElement: {}, querySelectorAll: () => [], getElementById: (id) => elements[id], createElement: element, addEventListener: (name, callback) => { documentEvents[name] = callback; } };
   const geolocation = { watchPosition: jest.fn(() => 0), clearWatch: jest.fn() };
   class BrowserURL extends URL {}
   BrowserURL.createObjectURL = jest.fn(() => 'blob:protected-audio');
@@ -79,8 +79,7 @@ async function activate(ui) {
   ui.elements['access-form'].events.submit({ preventDefault: jest.fn() });
   await flush();
 }
-function start(ui, simulation = true) {
-  ui.elements['tour-simulation'].checked = simulation;
+function start(ui) {
   ui.elements['toggle-tour'].events.click();
 }
 async function simulate(ui, result = inside, latitude = '10') {
@@ -94,6 +93,18 @@ async function simulate(ui, result = inside, latitude = '10') {
 beforeEach(() => { jest.useFakeTimers({ now: Date.parse('2026-10-13T01:00:00Z') }); });
 afterEach(() => { jest.useRealTimers(); });
 
+it('đổi ngôn ngữ cập nhật trạng thái vé đang kích hoạt mà không đổi phiên', async () => {
+  const ui = await setup();
+  await activate(ui);
+  const saved = ui.storage.get('tourist-access-token');
+  ui.elements.language.value = 'en';
+  ui.elements.language.events.change();
+  expect(ui.elements['access-status'].textContent).toBe('Activated · 15 minutes');
+  expect(ui.elements['access-message'].textContent).toBe(ui.window.TOUR_TRANSLATIONS.en.ticketActivated);
+  expect(ui.storage.get('tourist-access-token')).toBe(saved);
+  expect(ui.elements['access-countdown'].textContent).not.toBe('00:00');
+});
+
 it('opening QR prefills the code without redeem, storage writes, autoplay or GPS', async () => {
   const ui = await setup({ href: `http://localhost:3000/?voucher=${code}` });
   expect(ui.elements['voucher-code'].value).toBe(code);
@@ -103,6 +114,18 @@ it('opening QR prefills the code without redeem, storage writes, autoplay or GPS
   expect(ui.geolocation.watchPosition).not.toHaveBeenCalled();
   expect(ui.audio.play).not.toHaveBeenCalled();
   expect(ui.elements['toggle-tour'].disabled).toBe(true);
+});
+
+it.each([
+  ['aB7kP2x', 'aB7kP2x'],
+  [`http://localhost:3000/?voucher=${code}`, code],
+  [code, code],
+])('submitting %s sends the exact voucher code', async (input, expected) => {
+  const ui = await setup();
+  ui.elements['voucher-code'].value = input;
+  ui.elements['access-form'].events.submit({ preventDefault: jest.fn() });
+  await flush();
+  expect(JSON.parse(requests(ui, '/api/access/redeem')[0][1].body)).toEqual({ code: expected });
 });
 
 it('inactive session blocks tour, protected metadata/audio and manual media setup', async () => {
@@ -287,7 +310,7 @@ it('manual Play loads protected audio without enabling GPS or autoplay', async (
 
 it('real GPS uses the same narration path and no per-location session polling', async () => {
   const ui = await setup();
-  await activate(ui); start(ui, false);
+  await activate(ui); start(ui);
   ui.state.nearby = inside;
   const onPosition = ui.geolocation.watchPosition.mock.calls[0][0];
   onPosition({ coords: { latitude: 10, longitude: 106, accuracy: 5 } }); await flush();

@@ -23,7 +23,8 @@ test('account, session, POI and multilingual audio metadata survive pool restart
   const account = { id: id(), username: `test_${hash().slice(0, 20)}`, passwordHash: '$2b$12$abcdefghijklmnopqrstuu5dQLxvVdTZfxdZLzRqqxwPqDxhIGj9y',
     role: 'ADMIN', isLocked: false, version: 1, createdAt: now(), updatedAt: now() };
   const poi = { id: id(), name: "SQL test'); DELETE FROM dbo.POIs; --", description: 'Tiếng Việt', category: 'food',
-    address: 'Hà Nội', latitude: 21.02, longitude: 105.85, geofenceRadius: 50, isActive: true,
+    address: 'Hà Nội', streetAddress: 'Đường kiểm thử', ward: 'Phường kiểm thử', city: 'Hà Nội',
+    latitude: 21.02, longitude: 105.85, geofenceRadius: 50, isActive: true,
     createdAt: now(), updatedAt: now() };
   const tokenHash = hash();
   try {
@@ -38,7 +39,8 @@ test('account, session, POI and multilingual audio metadata survive pool restart
       vi: { text: 'Xin chào', audioFile: 'demo.wav' }, ja: { text: 'こんにちは' },
       ko: { text: '안녕하세요' }, en: { text: 'Hello' },
     });
-    expect((await pois.findById(poi.id)).name).toBe(poi.name);
+    expect((await pois.findById(poi.id))).toMatchObject({ name: poi.name, streetAddress: poi.streetAddress,
+      ward: poi.ward, city: poi.city, latitude: poi.latitude, longitude: poi.longitude });
     await expect(accounts.update(account.id, { isLocked: true })).rejects.toMatchObject({ statusCode: 409 });
   } finally {
     const pool = await getPool();
@@ -79,5 +81,22 @@ test('voucher redemption is atomic and rollback leaves voucher unused', async ()
     await pool.request().input('id', voucher.id).query('UPDATE dbo.Vouchers SET SessionId=NULL WHERE Id=TRY_CONVERT(uniqueidentifier, @id)');
     await pool.request().input('id', voucher.id).query('DELETE dbo.GuestSessions WHERE VoucherId=TRY_CONVERT(uniqueidentifier, @id)');
     await pool.request().input('id', voucher.id).query('DELETE dbo.Vouchers WHERE Id=TRY_CONVERT(uniqueidentifier, @id)');
+  }
+});
+
+test('POI cũ chỉ có Address và tọa độ vẫn đọc/sửa được sau migration 002', async () => {
+  const poiId = id();
+  const pool = await getPool();
+  try {
+    await pool.request().input('id', poiId).query(`INSERT dbo.POIs
+      (Id, Name, Description, Category, Address, Latitude, Longitude, GeofenceRadius, IsActive)
+      VALUES (TRY_CONVERT(uniqueidentifier, @id), N'POI cũ', N'Mô tả', N'food', N'Địa chỉ cũ', 10, 106, 50, 1)`);
+    expect(await pois.findById(poiId)).toMatchObject({ address: 'Địa chỉ cũ', streetAddress: null,
+      ward: null, city: null, latitude: 10, longitude: 106 });
+    await pois.update(poiId, { name: 'POI đã sửa', updatedAt: now() });
+    expect(await pois.findById(poiId)).toMatchObject({ name: 'POI đã sửa', address: 'Địa chỉ cũ',
+      streetAddress: null, ward: null, city: null, latitude: 10, longitude: 106 });
+  } finally {
+    await pool.request().input('id', poiId).query('DELETE dbo.POIs WHERE Id=TRY_CONVERT(uniqueidentifier, @id)');
   }
 });

@@ -40,6 +40,7 @@ beforeEach(() => {
   accounts.create({ ...seed, id: 'manager', username: 'fixture_manager', role: 'POI_MANAGER' });
   cachedRoot = null; cachedManager = null;
   process.env.NODE_ENV = 'test'; delete process.env.ADMIN_ORIGIN;
+  process.env.ACTIVATION_CODE_SECRET = 'test-only-secret-32-characters-long';
   poi = poiService.createPoi(basePoi);
   poiService.setVietnameseNarration(poi.id, { text: 'Protected narration' });
   piper.synthesize.mockReset().mockResolvedValue(filename);

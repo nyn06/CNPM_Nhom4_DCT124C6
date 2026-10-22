@@ -25,6 +25,7 @@ afterAll(async () => { await fs.unlink(path.join(audioRoot, filename)); });
 beforeEach(() => {
   process.env.DEMO_ADMIN_ENABLED = 'true';
   process.env.NODE_ENV = 'test';
+  process.env.ACTIVATION_CODE_SECRET = 'test-only-secret-32-characters-long';
   delete process.env.PUBLIC_ORIGIN;
   accessRepository.clear(); poiRepository.clear();
   poi = poiService.createPoi({ name: 'Active', description: 'Demo', latitude: 10, longitude: 106, geofenceRadius: 50 });

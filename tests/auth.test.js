@@ -24,6 +24,7 @@ beforeEach(() => {
   accounts.clear(); repository.clear(); accounts.create(seed);
   accounts.create({ ...seed, id: 'manager', username: 'fixture_manager', role: 'POI_MANAGER' });
   process.env.NODE_ENV = 'test'; delete process.env.ADMIN_ORIGIN;
+  process.env.ACTIVATION_CODE_SECRET = 'test-only-secret-32-characters-long';
 });
 afterEach(() => { jest.restoreAllMocks(); process.env = { ...initialEnv }; });
 const root = () => login(app, fixture.username, fixture.password);
