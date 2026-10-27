@@ -146,7 +146,11 @@ input[aria-invalid="true"] { border-color: #b93d31; }
 .poi-category { font-size: 9px; margin: 0 0 5px; color: var(--orange); overflow-wrap: anywhere; }
 .poi-name { font-size: 19px; line-height: 1.4; overflow-wrap: anywhere; }
 .poi-address { color: var(--muted); font-size: 12px; margin: 6px 0 0; flex: 1; overflow-wrap: anywhere; }
-.poi-facts { margin: 20px 0; border-top: 1px solid var(--line); padding-top: 12px; }
+.poi-distance { display: flex; align-items: center; gap: 7px; min-height: 32px; margin: 14px 0 8px; color: var(--orange); font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.poi-distance .icon { width: 17px; height: 17px; flex: none; }
+.poi-technical { margin-bottom: 15px; color: var(--muted); font-size: 11px; }
+.poi-technical summary { cursor: pointer; padding: 6px 0; }
+.poi-facts { margin: 5px 0 0; border-top: 1px solid var(--line); padding-top: 8px; }
 .poi-facts > div { display: flex; justify-content: space-between; gap: 8px; margin: 5px 0; }
 .poi-facts dt, .poi-facts dd { font-size: 11px; }
 .poi-facts dd { overflow-wrap: anywhere; text-align: right; }

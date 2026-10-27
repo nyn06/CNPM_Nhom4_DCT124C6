@@ -62,6 +62,65 @@ beforeEach(() => { jest.useFakeTimers(); });
 afterEach(() => { jest.useRealTimers(); });
 
 describe('Frontend: GPS và request', () => {
+  it('cập nhật khoảng cách và thứ tự theo GPS thật, giữ thứ tự gốc khi dừng', async () => {
+    const { elements, fetch, geolocation } = await setup();
+    const cards = [];
+    elements['poi-template'].content = { firstElementChild: { cloneNode: () => {
+      const parts = {};
+      const card = { dataset: {}, querySelector: (selector) => (parts[selector] ||= createElement()), parts };
+      cards.push(card);
+      return card;
+    } } };
+    elements['poi-list'].append = jest.fn();
+    fetch.mockResolvedValueOnce(jsonResponse([
+      { id: 'far', name: 'Far', latitude: 0, longitude: 0.02, isActive: true },
+      { id: 'near', name: 'Near', latitude: 0, longitude: 0.001, isActive: true },
+      { id: 'missing', name: 'Missing', latitude: null, longitude: 0, isActive: true },
+      { id: 'tie', name: 'Tie', latitude: 0, longitude: -0.001, isActive: true },
+    ]));
+    elements['reload-pois'].events.click();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(cards[0].parts['.poi-distance-text'].textContent).toContain('Bật GPS');
+    expect(cards[2].parts['.poi-use'].disabled).toBe(true);
+    elements['start-gps'].events.click();
+    const position = geolocation.watchPosition.mock.calls[0][0];
+    position({ coords: { latitude: 0, longitude: 0 } });
+    expect(cards[1].parts['.poi-distance-text'].textContent).toContain('111 m');
+    expect(cards[0].parts['.poi-distance-text'].textContent).toContain('2,2 km');
+    expect(cards[2].parts['.poi-distance-text'].textContent).toContain('Chưa xác định');
+    expect(elements['poi-list'].append.mock.lastCall).toEqual([cards[1], cards[3], cards[0], cards[2]]);
+    position({ coords: { latitude: 0, longitude: 0.02 } });
+    expect(elements['poi-list'].append.mock.lastCall).toEqual([cards[0], cards[1], cards[3], cards[2]]);
+    elements['stop-gps'].events.click();
+    expect(elements['poi-list'].append.mock.lastCall).toEqual(cards);
+    expect(cards[0].parts['.poi-distance-text'].textContent).toContain('Bật GPS');
+  });
+
+  it('GPS giả lập cập nhật danh sách qua luồng vị trí sẵn có', async () => {
+    const { elements, fetch, geolocation } = await setup();
+    const cards = [];
+    elements['poi-template'].content = { firstElementChild: { cloneNode: () => {
+      const parts = {};
+      const card = { dataset: {}, querySelector: (selector) => (parts[selector] ||= createElement()), parts };
+      cards.push(card);
+      return card;
+    } } };
+    elements['poi-list'].append = jest.fn();
+    fetch.mockResolvedValueOnce(jsonResponse([
+      { id: 'a', name: 'A', latitude: 10, longitude: 106, isActive: true },
+      { id: 'b', name: 'B', latitude: 11, longitude: 106, isActive: true },
+    ]));
+    elements['reload-pois'].events.click();
+    await jest.advanceTimersByTimeAsync(0);
+    submit(elements, '11', '106');
+    await jest.advanceTimersByTimeAsync(0);
+    expect(cards[1].parts['.poi-distance-text'].textContent).toContain('0 m');
+    expect(elements['poi-list'].append.mock.lastCall).toEqual([cards[1], cards[0]]);
+    submit(elements, '10', '106');
+    expect(elements['poi-list'].append.mock.lastCall).toEqual([cards[0], cards[1]]);
+    expect(geolocation.watchPosition).not.toHaveBeenCalled();
+  });
+
   it('thẻ POI ưu tiên các phần địa chỉ Admin đã lưu', async () => {
     const { elements, fetch } = await setup();
     const parts = {};

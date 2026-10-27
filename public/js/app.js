@@ -39,6 +39,9 @@
   let realLocation = null;
   let simulatedLocation = null;
   let loadedPois = null;
+  let poiCards = [];
+  let poiOrder = [];
+  let poiDistanceStatus = 'distanceEnableGps';
   let displayedNearbyPoi = null;
   let lastResultAt = null;
   let addressController = null;
@@ -102,6 +105,7 @@
     if (source === 'GPS thật') realLocation = currentLocation;
     else simulatedLocation = currentLocation;
     tourMap?.setLocation(currentLocation);
+    updatePoiDistances();
     updateAddress(currentLocation);
     byId('current-accuracy').textContent = Number.isFinite(location.accuracy) && location.accuracy >= 0
       ? `±${Math.round(location.accuracy)} m` : t('noAccuracy');
@@ -135,6 +139,38 @@
     const arc = Math.sin(lat / 2) ** 2 + Math.cos(a.latitude * radians)
       * Math.cos(b.latitude * radians) * Math.sin(lng / 2) ** 2;
     return 12742000 * Math.asin(Math.min(1, Math.sqrt(arc)));
+  }
+
+  function validPoint(point) {
+    return Number.isFinite(point?.latitude) && point.latitude >= -90 && point.latitude <= 90
+      && Number.isFinite(point?.longitude) && point.longitude >= -180 && point.longitude <= 180;
+  }
+
+  function formatPoiDistance(meters) {
+    const language = byId('language').value;
+    return meters < 1000
+      ? `${Math.round(meters).toLocaleString(language)} m`
+      : `${(meters / 1000).toLocaleString(language, { maximumFractionDigits: 1 })} km`;
+  }
+
+  function updatePoiDistances() {
+    if (!poiCards.length) return;
+    const location = currentLocation?.source === 'GPS giả lập' || gpsActive ? currentLocation : null;
+    const hasLocation = validPoint(location);
+    const ordered = poiCards.map((entry) => ({ ...entry,
+      distance: hasLocation && validPoint(entry.poi) ? distanceMeters(location, entry.poi) : null }));
+    for (const entry of ordered) {
+      entry.card.querySelector('.poi-distance-text').textContent = entry.distance === null
+        ? t(hasLocation ? 'distanceUnknown' : poiDistanceStatus)
+        : t('poiDistanceValue', { distance: formatPoiDistance(entry.distance) });
+    }
+    if (hasLocation) ordered.sort((a, b) => (a.distance === null) - (b.distance === null)
+      || (a.distance ?? Infinity) - (b.distance ?? Infinity) || a.index - b.index);
+    const nextOrder = ordered.map((entry) => entry.index);
+    if (nextOrder.some((index, position) => index !== poiOrder[position])) {
+      byId('poi-list').append(...ordered.map((entry) => entry.card));
+      poiOrder = nextOrder;
+    }
   }
 
   function updateAddress(location) {
@@ -517,6 +553,13 @@
     if (autoEnabled) disableAutoNarration();
     stopTracking();
     cancelNearby();
+    currentLocation = null;
+    tourMap?.clearLocation?.();
+    setText('current-source', 'noLocation');
+    byId('current-accuracy').textContent = '—';
+    showAddress(t('locationUnknown'), '—', '—', 'locationUnknown');
+    poiDistanceStatus = 'distanceEnableGps';
+    updatePoiDistances();
     setMessage('gps-status', 'gpsStopped');
     setMessage('gps-message', 'trackingStopped');
     setResult('idle', 'locationStopped', 'restartLocationHelp');
@@ -526,6 +569,13 @@
   function gpsError(error) {
     stopTracking();
     cancelNearby();
+    currentLocation = null;
+    tourMap?.clearLocation?.();
+    setText('current-source', 'noLocation');
+    byId('current-accuracy').textContent = '—';
+    showAddress(t('locationUnknown'), '—', '—', 'locationUnknown');
+    poiDistanceStatus = 'distanceGpsUnavailable';
+    updatePoiDistances();
     const messages = {
       1: ['gpsDenied', 'gpsPermissionHelp'],
       2: ['gpsUnavailable', 'gpsUnavailableHelp'],
@@ -574,6 +624,8 @@
   function startGps() {
     if (gpsActive) return;
     if (!navigator.geolocation || !window.isSecureContext) {
+      poiDistanceStatus = 'distanceGpsUnavailable';
+      updatePoiDistances();
       setMessage('gps-status', 'gpsUnavailable', 'error');
       setMessage('gps-message', !navigator.geolocation
         ? 'gpsUnsupportedHelp'
@@ -592,6 +644,8 @@
       selectedPoiId = null;
       pendingAutoEntry = null;
     }
+    poiDistanceStatus = 'distanceWaitingGps';
+    updatePoiDistances();
     cancelAddress();
     showAddress(t('locationUnknown'), '—', '—', 'locationUnknown');
     gpsActive = true;
@@ -668,7 +722,9 @@
     loadedPois = pois;
     const list = byId('poi-list');
     list.replaceChildren();
-    for (const poi of pois) {
+    poiCards = [];
+    poiOrder = [];
+    for (const [index, poi] of pois.entries()) {
       const card = byId('poi-template').content.firstElementChild.cloneNode(true);
       const active = poi.isActive === true;
       card.dataset.inactive = String(!active);
@@ -683,15 +739,18 @@
       status.textContent = t(active ? 'active' : 'inactive');
       status.dataset.tone = active ? 'success' : 'neutral';
       const button = card.querySelector('.poi-use');
-      button.disabled = !active;
+      button.disabled = !active || !validPoint(poi);
       button.setAttribute('aria-label', t('usePoiCoordinatesLabel', { name: poi.name }));
-      for (const key of ['coordinates', 'radius', 'useCoordinates']) {
+      for (const key of ['technicalDetails', 'coordinates', 'radius', 'useCoordinates']) {
         const label = card.querySelector(`[data-i18n="${key}"]`);
         if (label) label.textContent = t(key);
       }
       button.addEventListener('click', () => usePoiCoordinates(poi));
       list.append(card);
+      poiCards.push({ poi, card, index });
+      poiOrder.push(index);
     }
+    updatePoiDistances();
     setText('poi-count', 'poiCount', { active: pois.filter((poi) => poi.isActive === true).length, total: pois.length });
     byId('poi-message').hidden = pois.length > 0;
     setMessage('poi-message', 'noPoiData');
@@ -701,6 +760,9 @@
     byId('reload-pois').disabled = true;
     byId('poi-list').setAttribute('aria-busy', 'true');
     byId('poi-list').replaceChildren();
+    poiCards = [];
+    poiOrder = [];
+    loadedPois = null;
     byId('poi-message').hidden = false;
     setMessage('poi-message', 'loadingPoisMessage');
     setText('poi-count', 'loadingPois');
@@ -754,6 +816,7 @@
     if (lastResultAt && dynamicText.get('result-time')?.key === 'updatedAt') {
       setText('result-time', 'updatedAt', { time: lastResultAt.toLocaleTimeString(language) });
     }
+    updatePoiDistances();
   }
   function updateLanguage() {
     const language = byId('language').value;
@@ -808,7 +871,13 @@
   access.subscribe((valid) => {
     if (!valid) { disableAutoNarration(); clearNarration(); }
   });
-  window.addEventListener('pagehide', () => { disableAutoNarration(); stopTracking(); cancelNearby(); clearNarration(); tourMap?.destroy(); });
+  window.addEventListener('pagehide', () => {
+    disableAutoNarration(); stopTracking(); cancelNearby(); clearNarration();
+    currentLocation = null;
+    poiDistanceStatus = 'distanceEnableGps';
+    updatePoiDistances();
+    tourMap?.destroy();
+  });
   window.addEventListener('pageshow', (event) => { if (event.persisted) tourMap?.init(); });
   tourMap?.init();
   showAddress(t('locationUnknown'), '—', '—', 'locationUnknown');

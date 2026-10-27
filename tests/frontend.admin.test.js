@@ -321,6 +321,26 @@ describe('Stage 7: danh sách và CRUD POI', () => {
     expect(ui.elements['action-status'].textContent).toContain('xác nhận vị trí');
   });
 
+  it('chỉ tạo POI sau khi đã xác nhận vị trí trên bản đồ', async () => {
+    const ui = await setup({ pois: [] });
+    click(ui.elements['new-poi']);
+    fill(ui);
+    expect(ui.map.location()).toBeNull();
+    submit(ui.elements['poi-form']);
+    expect(requests(ui, 'POST', '/api/pois')).toHaveLength(0);
+    expect(ui.elements['action-status'].textContent).toBe('Đặt ghim và xác nhận vị trí trước khi lưu.');
+    expect(ui.elements['action-status'].dataset.tone).toBe('error');
+
+    ui.map.confirm(10, 106);
+    expect(ui.map.location()).toEqual({ latitude: 10, longitude: 106 });
+    submit(ui.elements['poi-form']);
+    await flush();
+    expect(requests(ui, 'POST', '/api/pois')).toHaveLength(1);
+    expect(JSON.parse(requests(ui, 'POST', '/api/pois')[0][1].body)).toMatchObject({ latitude: 10, longitude: 106 });
+    expect(ui.elements['action-status'].textContent).toContain('Đã tạo địa điểm');
+    expect(ui.elements['action-status'].dataset.tone).toBe('success');
+  });
+
   it('sửa thông tin POI cũ giữ nguyên tọa độ và địa chỉ chung', async () => {
     const ui = await setup();
     await select(ui);
