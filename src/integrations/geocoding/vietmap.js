@@ -25,22 +25,57 @@ function limit(type) {
   hits[type].push(now);
 }
 
-async function provider(path, params) {
+async function provider(path, params, type) {
   const apiKey = key();
   const url = new URL(path, baseUrl);
   url.search = new URLSearchParams({ apikey: apiKey, ...params }).toString();
-  let response;
-  try { response = await fetch(url, { signal: AbortSignal.timeout(8000), headers: { Accept: 'application/json' } }); }
-  catch { throw failure('GEOCODE_NETWORK', 503, 'Không kết nối được dịch vụ địa chỉ.'); }
-  if (response.status === 401 || response.status === 403) {
-    throw failure('GEOCODE_AUTH', 503, 'Khóa dịch vụ địa chỉ chưa hợp lệ hoặc chưa được cấp quyền.');
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt) {
+      // Retry counts toward the same per-provider limit as a new request.
+      limit(type);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    let response;
+    try { response = await fetch(url, { signal: AbortSignal.timeout(6000), headers: { Accept: 'application/json' } }); }
+    catch (error) {
+      if (!attempt) continue;
+      const cause = error?.cause?.code;
+      if (error?.name === 'TimeoutError' || ['ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT'].includes(cause)) {
+        throw failure('GEOCODE_TIMEOUT', 503, 'Dịch vụ địa chỉ phản hồi quá chậm.');
+      }
+      if (['ENOTFOUND', 'EAI_AGAIN'].includes(cause)) {
+        throw failure('GEOCODE_DNS', 503, 'Không phân giải được tên miền dịch vụ địa chỉ.');
+      }
+      if (typeof cause === 'string' && /^(?:ERR_TLS_|CERT_|DEPTH_ZERO_SELF_SIGNED_CERT)/.test(cause)) {
+        throw failure('GEOCODE_TLS', 503, 'Không thiết lập được kết nối bảo mật tới dịch vụ địa chỉ.');
+      }
+      // Do not log the request URL: it contains the API key.
+      console.warn('VietMap connection failure:', cause || error?.name || 'unknown');
+      throw failure('GEOCODE_NETWORK', 503, 'Không kết nối được dịch vụ địa chỉ.');
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw failure('GEOCODE_AUTH', 503, 'Khóa dịch vụ địa chỉ chưa hợp lệ hoặc chưa được cấp quyền.');
+    }
+    if (response.status === 423 || response.status === 429) {
+      throw failure('GEOCODE_QUOTA', 503, 'Dịch vụ địa chỉ đã đạt hạn mức hoặc chưa được kích hoạt.');
+    }
+    if (!response.ok) {
+      if (!attempt && [502, 503, 504].includes(response.status)) continue;
+      if ([502, 503, 504].includes(response.status)) {
+        throw failure(`GEOCODE_HTTP_${response.status}`, 503,
+          response.status === 504 ? 'VietMap hết thời gian phản hồi.' : 'VietMap tạm thời không khả dụng.');
+      }
+      throw failure('GEOCODE_PROVIDER', 503, 'Dịch vụ gợi ý địa chỉ tạm thời không khả dụng.');
+    }
+    try { return await response.json(); }
+    catch (error) {
+      if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+        throw failure('GEOCODE_TIMEOUT', 503, 'Dịch vụ địa chỉ phản hồi quá chậm.');
+      }
+      throw failure('GEOCODE_INVALID_RESPONSE', 503, 'Phản hồi địa chỉ không hợp lệ.');
+    }
   }
-  if (response.status === 423 || response.status === 429) {
-    throw failure('GEOCODE_QUOTA', 503, 'Dịch vụ địa chỉ đã đạt hạn mức hoặc chưa được kích hoạt.');
-  }
-  if (!response.ok) throw failure('GEOCODE_PROVIDER', 503, 'Dịch vụ gợi ý địa chỉ tạm thời không khả dụng.');
-  try { return await response.json(); }
-  catch { throw failure('GEOCODE_PROVIDER', 503, 'Phản hồi địa chỉ không hợp lệ.'); }
+  throw failure('GEOCODE_PROVIDER', 503, 'Dịch vụ gợi ý địa chỉ tạm thời không khả dụng.');
 }
 
 function tidy(map) {
@@ -57,8 +92,8 @@ async function suggest({ streetAddress, ward, city }) {
   const cached = suggestions.get(cacheKey);
   if (cached) return cached.items;
   limit('suggest');
-  const raw = await provider('/api/autocomplete/v4', { text: query, display_type: '5' });
-  if (!Array.isArray(raw)) throw failure('GEOCODE_PROVIDER', 503, 'Phản hồi địa chỉ không hợp lệ.');
+  const raw = await provider('/api/autocomplete/v4', { text: query, display_type: '5' }, 'suggest');
+  if (!Array.isArray(raw)) throw failure('GEOCODE_INVALID_RESPONSE', 503, 'Phản hồi địa chỉ không hợp lệ.');
   const items = raw.filter((row) => row && typeof row.ref_id === 'string'
     && /^(auto|geocode):[A-Za-z0-9_-]{1,500}$/.test(row.ref_id)
     && typeof row.display === 'string' && row.display.trim()).slice(0, 6).map((row) => {
@@ -67,6 +102,7 @@ async function suggest({ streetAddress, ward, city }) {
     return { id, name: String(row.name || '').slice(0, 180), address: String(row.address || '').slice(0, 300),
       display: row.display.slice(0, 500) };
   });
+  if (raw.length && !items.length) throw failure('GEOCODE_INVALID_RESPONSE', 503, 'Phản hồi địa chỉ không hợp lệ.');
   tidy(places);
   suggestions.set(cacheKey, { items, expires: Date.now() + ttl });
   return items;
@@ -79,12 +115,12 @@ async function place(id) {
   if (!selected) throw failure('GEOCODE_EXPIRED', 404, 'Gợi ý đã hết hạn. Hãy tìm lại địa chỉ.');
   if (selected.result) return selected.result;
   limit('place');
-  const raw = await provider('/api/place/v4', { refid: selected.refId });
+  const raw = await provider('/api/place/v4', { refid: selected.refId }, 'place');
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)
     || typeof raw.lat !== 'number' || typeof raw.lng !== 'number'
     || !Number.isFinite(raw.lat) || Math.abs(raw.lat) > 90
     || !Number.isFinite(raw.lng) || Math.abs(raw.lng) > 180) {
-    throw failure('GEOCODE_PROVIDER', 503, 'Vị trí trả về không hợp lệ.');
+    throw failure('GEOCODE_INVALID_RESPONSE', 503, 'Vị trí trả về không hợp lệ.');
   }
   const part = (value, max) => typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null;
   const road = part(raw.road || raw.pedestrian || raw.street || raw.footway, 180);
@@ -118,8 +154,8 @@ async function reverse(latitude, longitude) {
   const cached = reverses.get(cacheKey);
   if (cached) return cached.result;
   limit('reverse');
-  const raw = await provider('/api/reverse/v4', { lat: latitude, lng: longitude, display_type: '1' });
-  if (!Array.isArray(raw)) throw failure('GEOCODE_PROVIDER', 503, 'Phản hồi địa chỉ không hợp lệ.');
+  const raw = await provider('/api/reverse/v4', { lat: latitude, lng: longitude, display_type: '1' }, 'reverse');
+  if (!Array.isArray(raw)) throw failure('GEOCODE_INVALID_RESPONSE', 503, 'Phản hồi địa chỉ không hợp lệ.');
   const item = raw[0];
   const boundaries = Array.isArray(item?.boundaries) ? item.boundaries : [];
   const part = (type, max) => {

@@ -2,8 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
-const jobRoutes = require('./routes/job.routes');
-const narrationRoutes = require('./routes/narration.routes');
+const languageRoutes = require('./routes/language.routes');
 const poiRoutes = require('./routes/poi.routes');
 const errorHandler = require('./middlewares/errorHandler');
 const accessRoutes = require('./routes/access.routes');
@@ -11,6 +10,7 @@ const { requireAdmin, requireRoles, adminPage } = require('./middlewares/require
 const authRoutes = require('./routes/auth.routes');
 const accountRoutes = require('./routes/account.routes');
 const geocodeRoutes = require('./routes/geocode.routes');
+const dashboardRoutes = require('./routes/dashboard.routes');
 const { requireAccess } = require('./middlewares/requireAccess');
 const serveAudio = require('./controllers/audio.controller');
 const sqlRuntime = process.env.NODE_ENV !== 'test' || process.env.DB_INTEGRATION === '1';
@@ -37,12 +37,12 @@ app.get('/health', async (req, res) => {
   } catch { return res.status(503).json({ status: 'unavailable' }); }
 });
 
-app.use('/api', jobRoutes);
-app.use('/api', narrationRoutes);
+app.use('/api', languageRoutes);
 app.use('/api', poiRoutes);
 app.use('/api', accessRoutes);
 app.use('/api', authRoutes);
 app.use('/api', accountRoutes);
+app.use('/api', dashboardRoutes);
 app.use('/api', geocodeRoutes);
 
 // Phục vụ WebApp cùng origin; không có SPA fallback bắt nhầm API.

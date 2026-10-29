@@ -6,13 +6,18 @@
   let user = null;
   let timer;
   let disposed = false;
+  function renderIdentity() {
+    if (!user) return;
+    const role = window.ADMIN_I18N?.t(user.role === 'ADMIN' ? 'html.admin.164' : 'html.admin.165') ?? user.role;
+    byId('admin-identity').textContent = `${user.username} · ${role}`;
+  }
   let controller;
   function expire() {
     if (disposed) return;
     disposed = true;
     user = null; csrfToken = null;
     byId('admin-shell').hidden = true;
-    byId('admin-identity').textContent = 'Phiên quản trị đã kết thúc';
+    byId('admin-identity').textContent = (window.ADMIN_I18N?.t('js.admin_auth.001') ?? 'Phiên quản trị đã kết thúc');
     clearTimeout(timer);
     for (const listener of listeners) listener();
     window.location.replace('/admin-login.html');
@@ -32,7 +37,7 @@
       if (disposed) return null;
       user = data.user;
       csrfToken = data.csrfToken;
-      byId('admin-identity').textContent = `${user.username} · ${user.role}`;
+      renderIdentity();
       byId('admin-shell').hidden = false;
       byId('voucher-management').hidden = user.role !== 'ADMIN';
       byId('account-management').hidden = user.role !== 'ADMIN';
@@ -54,6 +59,12 @@
   const logoutModal = byId('admin-logout-modal');
   const logoutCancel = byId('admin-logout-cancel');
   const logoutConfirm = byId('admin-logout-confirm');
+  window.ADMIN_I18N?.onChange(() => {
+    renderIdentity();
+    logoutConfirm.textContent = logoutConfirm.disabled
+      ? window.ADMIN_I18N.t('js.admin_auth.002') : window.ADMIN_I18N.t('js.admin_auth.005');
+    byId('admin-session-status').textContent = '';
+  });
 
   function closeLogoutModal() {
     if (logoutModal.hidden) return;
@@ -88,7 +99,7 @@
     logoutButton.disabled = true;
     logoutCancel.disabled = true;
     logoutConfirm.disabled = true;
-    logoutConfirm.textContent = 'Đang đăng xuất…';
+    logoutConfirm.textContent = (window.ADMIN_I18N?.t('js.admin_auth.002') ?? 'Đang đăng xuất…');
 
     const current = new AbortController();
     const timeout = setTimeout(() => current.abort(), 10000);
@@ -110,19 +121,19 @@
         expire();
       } else {
         byId('admin-session-status').textContent =
-          'Chưa đăng xuất được. Tải lại trang và thử lại.';
+          (window.ADMIN_I18N?.t('js.admin_auth.003') ?? 'Chưa đăng xuất được. Tải lại trang và thử lại.');
         logoutModal.hidden = true;
       }
     } catch {
       byId('admin-session-status').textContent =
-        'Mất kết nối; phiên trên server có thể còn hiệu lực. Hãy thử Đăng xuất lại.';
+        (window.ADMIN_I18N?.t('js.admin_auth.004') ?? 'Mất kết nối; phiên trên server có thể còn hiệu lực. Hãy thử Đăng xuất lại.');
       logoutModal.hidden = true;
     } finally {
       clearTimeout(timeout);
       logoutButton.disabled = false;
       logoutCancel.disabled = false;
       logoutConfirm.disabled = false;
-      logoutConfirm.textContent = 'Tiếp tục';
+      logoutConfirm.textContent = (window.ADMIN_I18N?.t('js.admin_auth.005') ?? 'Tiếp tục');
     }
   });
 

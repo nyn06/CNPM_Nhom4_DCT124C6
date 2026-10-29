@@ -13,5 +13,8 @@ class AccountController {
   async resetPassword(req, res, next) {
     try { res.json(await service.resetPassword(req.params.id, req.body, req.admin.user.id)); } catch (error) { next(error); }
   }
+  async changeOwnPassword(req, res, next) {
+    try { res.json(await service.changeOwnPassword(req.body, req.admin.user.id)); } catch (error) { next(error); }
+  }
 }
 module.exports = new AccountController();

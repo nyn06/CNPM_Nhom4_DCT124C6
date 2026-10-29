@@ -4,18 +4,22 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f5f0">
-  <title>Quản lý điểm thuyết minh — Vị Giác</title>
+  <title data-admin-i18n="html.admin.028">Quản lý điểm thuyết minh — Vị Giác</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/admin.css">
   <link rel="stylesheet" href="/leaflet/leaflet.css">
   <script src="/js/poi-languages.js" defer></script>
+  <script src="/js/admin-translations.js" defer></script>
+  <script src="/js/admin-i18n.js" defer></script>
   <script src="/js/admin-auth.js" defer></script>
   <script src="/leaflet/leaflet.js" defer></script>
   <script src="/js/admin-poi-map.js" defer></script>
   <script src="/js/admin.js" defer></script>
-  <script src="/js/vouchers.js" defer></script>
+  <script src="/js/admin-vouchers.js" defer></script>
   <script src="/js/accounts.js" defer></script>
+  <script src="/js/admin-navigation.js" defer></script>
+  <script src="/js/admin-dashboard.js" defer></script>
 </head>
 
 
@@ -61,125 +65,400 @@
     gap: 12px;
     flex-wrap: wrap;
   }
+
+
+.poi-delete-modal[hidden] {
+  display: none;
+}
+
+.poi-delete-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 45%);
+}
+
+.poi-delete-modal__content {
+  width: 100%;
+  max-width: 420px;
+  padding: 24px;
+  border-radius: 16px;
+  background: #fff;
+  color: #222;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 20%);
+}
+
+.poi-delete-modal__content h2 {
+  margin: 0 0 12px;
+  font-size: 1.25rem;
+}
+
+.poi-delete-modal__content p {
+  margin: 0 0 24px;
+  line-height: 1.6;
+}
+
+.poi-delete-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 </style>
 
 <body class="admin-page">
-  <a class="skip-link" href="#admin-main">Đến nội dung quản lý</a>
+  <a class="skip-link" href="#admin-main" data-admin-i18n="html.admin.029">Đến nội dung quản lý</a>
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="/admin.html">Vị Giác<span class="tag">QUẢN LÝ</span></a>
-      <div class="admin-session"><span id="admin-identity" role="status">Đang kiểm tra phiên…</span><button id="admin-logout" class="button secondary" type="button">Đăng xuất</button><a class="button secondary" href="/">Mở WebApp khách →</a></div>
+      <strong id="admin-header-title" class="admin-header-title" data-admin-i18n="html.admin.030">Tổng quan hệ thống</strong>
+      <div class="admin-session"><label class="admin-language-control" for="admin-language"><span aria-hidden="true">🌐</span><span class="sr-only" data-admin-i18n="html.admin.154">Ngôn ngữ giao diện</span><select id="admin-language" aria-label="Ngôn ngữ giao diện" data-admin-i18n-aria-label="html.admin.154"><option value="vi">🇻🇳 Tiếng Việt</option><option value="en">🇺🇸 English</option><option value="ja">🇯🇵 日本語</option><option value="ko">🇰🇷 한국어</option></select></label><span id="admin-identity" role="status" data-admin-i18n="html.admin.031">Đang kiểm tra phiên…</span><button id="admin-mobile-menu" class="button secondary" type="button" aria-controls="admin-sidebar" aria-expanded="false">☰ <span data-admin-i18n="html.admin.155">Menu</span></button></div>
     </div>
   </header>
   <main id="admin-main" class="page admin-main">
     <p id="admin-session-status" class="helper" role="status"></p>
-    <div id="admin-shell" hidden>
-    <div class="admin-heading">
-      <div><p class="eyebrow">ĐIỂM ĐẾN &amp; NỘI DUNG</p><h1>Quản lý điểm thuyết minh</h1><p class="helper">Tạo địa điểm, chuẩn bị nội dung và audio cho hành trình của khách.</p></div>
-    </div>
-    <noscript><p class="notice" data-tone="error">Hãy bật JavaScript để sử dụng trang quản lý.</p></noscript>
+    <div id="admin-shell" class="admin-layout" hidden>
+    <button id="admin-sidebar-backdrop" class="admin-sidebar-backdrop" type="button" aria-label="Đóng menu" hidden data-admin-i18n-aria-label="html.admin.001"></button>
+    <aside id="admin-sidebar" class="admin-sidebar" aria-label="Điều hướng quản trị" data-admin-i18n-aria-label="html.admin.002">
+      <div class="admin-sidebar-brand"><span class="admin-brand-mark" aria-hidden="true">V</span><span class="admin-sidebar-label">Vị Giác <small data-admin-i18n="html.admin.032">QUẢN TRỊ</small></span></div>
+      <button id="admin-sidebar-toggle" class="admin-sidebar-toggle" type="button" aria-controls="admin-sidebar" aria-expanded="true" aria-label="Thu gọn menu" title="Thu gọn menu" data-admin-i18n-title="html.admin.003" data-admin-i18n-aria-label="html.admin.003">☰ <span class="admin-sidebar-label" data-admin-i18n="html.admin.033">Thu gọn</span></button>
+      <nav class="admin-sidebar-nav" aria-label="Phân hệ" data-admin-i18n-aria-label="html.admin.004">
+        <a href="#dashboard" data-admin-view="dashboard" aria-label="Tổng quan" title="Tổng quan" data-admin-i18n-title="html.admin.005" data-admin-i18n-aria-label="html.admin.005"><span class="admin-nav-icon" aria-hidden="true">▦</span><span class="admin-sidebar-label" data-admin-i18n="html.admin.005">Tổng quan</span></a>
+        <a href="#vouchers" data-admin-view="vouchers" data-admin-role="ADMIN" aria-label="Quản lý vé QR" title="Quản lý vé QR" data-admin-i18n-title="html.admin.006" data-admin-i18n-aria-label="html.admin.006"><span class="admin-nav-icon" aria-hidden="true">▣</span><span class="admin-sidebar-label" data-admin-i18n="html.admin.006">Quản lý vé QR</span></a>
+        <a href="#pois" data-admin-view="pois" aria-label="Quản lý POI" title="Quản lý POI" data-admin-i18n-title="html.admin.007" data-admin-i18n-aria-label="html.admin.007"><span class="admin-nav-icon" aria-hidden="true">⌖</span><span class="admin-sidebar-label" data-admin-i18n="html.admin.007">Quản lý POI</span></a>
+        <a href="#accounts" data-admin-view="accounts" data-admin-role="ADMIN" aria-label="Quản lý tài khoản" title="Quản lý tài khoản" data-admin-i18n-title="html.admin.008" data-admin-i18n-aria-label="html.admin.008"><span class="admin-nav-icon" aria-hidden="true">♙</span><span class="admin-sidebar-label" data-admin-i18n="html.admin.008">Quản lý tài khoản</span></a>
+      </nav>
+      <div class="admin-sidebar-footer"><a href="/" aria-label="Mở Web khách hàng" title="Mở Web khách hàng" data-admin-i18n-title="html.admin.009" data-admin-i18n-aria-label="html.admin.009"><span class="admin-nav-icon" aria-hidden="true">↗</span><span class="admin-sidebar-label" data-admin-i18n="html.admin.009">Mở Web khách hàng</span></a><button id="admin-logout" type="button" aria-label="Đăng xuất" title="Đăng xuất" data-admin-i18n-title="html.admin.010" data-admin-i18n-aria-label="html.admin.010"><span class="admin-nav-icon" aria-hidden="true">⇥</span><span class="admin-sidebar-label" data-admin-i18n="html.admin.010">Đăng xuất</span></button></div>
+    </aside>
+    <div class="admin-main-content">
+    <noscript><p class="notice" data-tone="error" data-admin-i18n="html.admin.034">Hãy bật JavaScript để sử dụng trang quản lý.</p></noscript>
+    <section id="dashboard-screen" class="admin-screen" aria-labelledby="dashboard-title" hidden>
+      <div class="admin-heading"><div><p class="eyebrow" data-admin-i18n="html.admin.035">VỊ GIÁC · QUẢN TRỊ</p><h1 id="dashboard-title" data-admin-i18n="html.admin.030">Tổng quan hệ thống</h1><p class="helper" data-admin-i18n="html.admin.036">Theo dõi địa điểm và tình trạng vé tham quan.</p></div></div>
+      <div id="dashboard-manager-intro" class="panel admin-dashboard-intro" hidden><h2 data-admin-i18n="html.admin.037">Chào mừng đến Vị Giác</h2><p data-admin-i18n="html.admin.038">Truy cập Quản lý POI để chuẩn bị địa điểm, nội dung và audio thuyết minh.</p><a class="button primary" href="#pois" data-admin-view="pois" data-admin-i18n="html.admin.039">Quản lý POI →</a></div>
+      <div id="dashboard-admin-content" hidden>
+        <div class="admin-dashboard-toolbar"><h2 data-admin-i18n="html.admin.040">Chỉ số hệ thống</h2><button id="reload-dashboard" type="button" class="button secondary" data-admin-i18n="html.admin.041">Làm mới dữ liệu</button></div>
+        <p id="dashboard-status" class="helper" role="status" aria-live="polite" data-admin-i18n="html.admin.042">Đang tải số liệu…</p>
+        <div class="dashboard-stats" aria-label="Thống kê hệ thống" data-admin-i18n-aria-label="html.admin.011">
+          <article class="dashboard-stat"><span data-admin-i18n="html.admin.043">TỔNG ĐỊA ĐIỂM</span><strong id="stat-poi-total">—</strong></article>
+          <article class="dashboard-stat"><span data-admin-i18n="html.admin.044">POI ĐANG HOẠT ĐỘNG</span><strong id="stat-poi-active">—</strong></article>
+          <article class="dashboard-stat"><span data-admin-i18n="html.admin.045">TỔNG VÉ QR</span><strong id="stat-voucher-total">—</strong></article>
+          <article class="dashboard-stat"><span data-admin-i18n="html.admin.046">CHƯA KÍCH HOẠT</span><strong id="stat-voucher-unused">—</strong></article>
+          <article class="dashboard-stat"><span data-admin-i18n="html.admin.047">ĐANG SỬ DỤNG</span><strong id="stat-voucher-active">—</strong></article>
+          <article class="dashboard-stat"><span data-admin-i18n="html.admin.048">ĐÃ HẾT HẠN</span><strong id="stat-voucher-expired">—</strong></article>
+          <article class="dashboard-stat"><span data-admin-i18n="html.admin.049">TÀI KHOẢN QUẢN TRỊ</span><strong id="stat-account-total">—</strong></article>
+        </div>
+        <div class="dashboard-panels">
+          <section class="panel dashboard-chart-panel" aria-labelledby="voucher-chart-title"><h2 id="voucher-chart-title" data-admin-i18n="html.admin.050">Thống kê trạng thái vé QR</h2><div class="dashboard-chart-body"><div id="voucher-chart" class="dashboard-donut" role="img" aria-label="Chưa có dữ liệu" data-admin-i18n-aria-label="html.admin.012"><span id="voucher-chart-total">—</span></div><ul class="dashboard-legend"><li><span class="legend-dot unused"></span><span data-admin-i18n="html.admin.076">Chưa kích hoạt</span> <strong id="chart-unused">—</strong></li><li><span class="legend-dot active"></span><span data-admin-i18n="html.admin.077">Đang sử dụng</span> <strong id="chart-active">—</strong></li><li><span class="legend-dot expired"></span><span data-admin-i18n="html.admin.078">Đã hết hạn</span> <strong id="chart-expired">—</strong></li></ul></div><p id="voucher-chart-empty" class="helper" hidden data-admin-i18n="html.admin.051">Chưa có vé QR để thống kê.</p></section>
+          <section class="panel dashboard-recent-panel" aria-labelledby="recent-title"><h2 id="recent-title" data-admin-i18n="html.admin.052">Hoạt động gần đây</h2><p id="recent-empty" class="helper" hidden data-admin-i18n="html.admin.053">Chưa có phiên kích hoạt.</p><div class="admin-table-wrap"><table class="admin-table dashboard-recent-table"><thead><tr><th data-admin-i18n="html.admin.054">Mã phiên</th><th data-admin-i18n="html.admin.055">Vé tham chiếu</th><th data-admin-i18n="html.admin.056">Kích hoạt</th><th data-admin-i18n="html.admin.057">Hết hạn</th><th data-admin-i18n="html.admin.058">Trạng thái</th></tr></thead><tbody id="recent-activation-rows"></tbody></table></div></section>
+        </div>
+        <section class="panel dashboard-quick" aria-labelledby="quick-title"><h2 id="quick-title" data-admin-i18n="html.admin.059">Truy cập nhanh</h2><div><a class="button secondary" href="#vouchers" data-admin-view="vouchers" data-admin-role="ADMIN" data-admin-i18n="html.admin.006">Quản lý vé QR</a><a class="button secondary" href="#pois" data-admin-view="pois" data-admin-i18n="html.admin.007">Quản lý POI</a><a class="button secondary" href="#accounts" data-admin-view="accounts" data-admin-role="ADMIN" data-admin-i18n="html.admin.008">Quản lý tài khoản</a></div></section>
+      </div>
+    </section>
     <section id="voucher-management" class="panel admin-panel voucher-panel" aria-labelledby="voucher-title" hidden>
-      <div class="admin-section-heading"><h2 id="voucher-title">QUẢN LÝ VÉ QR</h2><button id="reload-vouchers" class="button secondary" type="button">Tải lại trạng thái</button></div>
+      <div class="admin-section-heading"><div><h2 id="voucher-title" data-admin-i18n="html.admin.006">Quản lý vé QR</h2><p class="helper" data-admin-i18n="html.admin.060">Quản lý vé tham quan và theo dõi trạng thái kích hoạt của du khách.</p></div><button id="reload-vouchers" class="button secondary" type="button" data-admin-i18n="html.admin.041">Làm mới dữ liệu</button></div>
+      <p id="voucher-data-status" class="helper" role="status" aria-live="polite"></p>
+      <div class="voucher-stats" aria-label="Thống kê vé QR" data-admin-i18n-aria-label="html.admin.013">
+        <article><span data-admin-i18n="html.admin.045">TỔNG VÉ QR</span><strong id="voucher-stat-total">—</strong></article>
+        <article><span data-admin-i18n="html.admin.046">CHƯA KÍCH HOẠT</span><strong id="voucher-stat-unused">—</strong></article>
+        <article><span data-admin-i18n="html.admin.047">ĐANG SỬ DỤNG</span><strong id="voucher-stat-active">—</strong></article>
+        <article><span data-admin-i18n="html.admin.048">ĐÃ HẾT HẠN</span><strong id="voucher-stat-expired">—</strong></article>
+      </div>
+      <h3 data-admin-i18n="html.admin.063">Tạo vé tham quan</h3>
       <form id="voucher-form" class="voucher-actions">
-        <label for="voucher-duration">Thời hạn vé</label><select id="voucher-duration"><option value="15">15 phút</option><option value="60" selected>60 phút</option><option value="120">120 phút</option></select><button id="create-voucher" class="button primary" type="submit">Tạo voucher</button>
+        <label for="voucher-duration" data-admin-i18n="html.admin.064">Thời hạn vé</label><select id="voucher-duration"><option value="15" data-admin-i18n="html.admin.065">15 phút</option><option value="60" selected data-admin-i18n="html.admin.066">60 phút</option><option value="120" data-admin-i18n="html.admin.067">120 phút</option></select><button id="create-voucher" class="button primary" type="submit" data-admin-i18n="html.admin.068">Tạo voucher</button>
       </form>
-      <p id="voucher-message" class="helper" role="status">Mỗi vé chỉ kích hoạt một lần; thời hạn bắt đầu khi khách kích hoạt.</p>
+      <p id="voucher-message" class="helper" role="status" data-admin-i18n="html.admin.069">Mỗi vé chỉ kích hoạt một lần; thời hạn bắt đầu khi khách kích hoạt.</p>
       <div id="voucher-result" class="voucher-result" hidden>
-        <img id="voucher-qr" width="240" height="240" alt="QR kích hoạt vé tham quan">
-        <div><p id="created-voucher-status" class="helper"></p><label for="activation-url">URL kích hoạt</label><input id="activation-url" type="text" readonly><button id="copy-voucher-url" type="button" class="button secondary">Sao chép URL</button>
-          <div class="activation-code-section"><label for="activation-code">Mã kích hoạt</label><div class="activation-code-actions"><input id="activation-code" type="text" readonly aria-label="Mã kích hoạt"><button id="copy-activation-code" type="button" class="button secondary">Sao chép mã</button></div><p class="helper">Mỗi vé mới sẽ có một mã riêng.</p></div>
+        <img id="voucher-qr" width="240" height="240" alt="QR kích hoạt vé tham quan" data-admin-i18n-alt="html.admin.014">
+        <div><p id="created-voucher-status" class="helper"></p><label for="activation-url" data-admin-i18n="html.admin.070">URL kích hoạt</label><input id="activation-url" type="text" readonly><button id="copy-voucher-url" type="button" class="button secondary" data-admin-i18n="html.admin.071">Sao chép URL</button>
+          <div class="activation-code-section"><label for="activation-code" data-admin-i18n="html.admin.015">Mã kích hoạt</label><div class="activation-code-actions"><input id="activation-code" type="text" readonly aria-label="Mã kích hoạt" data-admin-i18n-aria-label="html.admin.015"><button id="copy-activation-code" type="button" class="button secondary" data-admin-i18n="html.admin.072">Sao chép mã</button></div><p class="helper" data-admin-i18n="html.admin.073">Mỗi vé mới sẽ có một mã riêng.</p></div>
         </div>
       </div>
-      <ul id="voucher-list" class="voucher-list" aria-label="Trạng thái vé" aria-busy="false"></ul>
+      <ul id="voucher-list" class="voucher-list" aria-label="Trạng thái vé" aria-busy="false" hidden data-admin-i18n-aria-label="html.admin.016"></ul>
+      <form id="voucher-search-form" class="voucher-search-form" novalidate>
+        <div class="voucher-search-field">
+          <label for="voucher-search-duration" data-admin-i18n="html.admin.064">Thời hạn vé</label>
+          <select id="voucher-search-duration">
+            <option value="all" data-admin-i18n="html.admin.074">Tất cả</option>
+            <option value="15" data-admin-i18n="html.admin.065">15 phút</option>
+            <option value="60" data-admin-i18n="html.admin.066">60 phút</option>
+            <option value="120" data-admin-i18n="html.admin.067">120 phút</option>
+          </select>
+        </div>
+
+        <div class="voucher-search-field">
+          <label for="voucher-search-date" data-admin-i18n="html.admin.075">Ngày tạo</label>
+          <input id="voucher-search-date" type="date" aria-describedby="voucher-search-date-error"><p id="voucher-search-date-error" class="admin-field-error" role="status" hidden></p>
+        </div>
+
+        <div class="voucher-search-field">
+          <label for="voucher-filter" data-admin-i18n="html.admin.058">Trạng thái</label>
+          <select id="voucher-filter">
+            <option value="all" data-admin-i18n="html.admin.074">Tất cả</option>
+            <option value="unused" data-admin-i18n="html.admin.076">Chưa kích hoạt</option>
+            <option value="active" data-admin-i18n="html.admin.077">Đang sử dụng</option>
+            <option value="expired" data-admin-i18n="html.admin.078">Đã hết hạn</option>
+          </select>
+        </div>
+
+        <button id="voucher-search-reset"
+                class="button secondary"
+                type="button" data-admin-i18n="html.admin.079">
+          Đặt lại
+        </button>
+
+        <button id="voucher-search-submit"
+                class="button primary"
+                type="submit" data-admin-i18n="html.admin.080">
+          Tìm kiếm
+        </button>
+      </form>
+      <p id="voucher-list-status" class="helper" role="status"></p>
+      <div class="admin-table-wrap"><table class="admin-table voucher-data-table"><thead><tr><th data-admin-i18n="html.admin.157">STT</th><th data-admin-i18n="html.admin.081">Mã vé tham chiếu</th><th data-admin-i18n="html.admin.082">Thời hạn</th><th data-admin-i18n="html.admin.075">Ngày tạo</th><th data-admin-i18n="html.admin.083">Kích hoạt lúc</th><th data-admin-i18n="html.admin.084">Hết hạn lúc</th><th data-admin-i18n="html.admin.058">Trạng thái</th></tr></thead><tbody id="voucher-rows"></tbody></table></div>
+        <div class="voucher-pagination"><button id="voucher-prev" class="button secondary" type="button" data-admin-i18n="html.admin.085">Trang trước</button><span id="voucher-page">—</span><button id="voucher-next" class="button secondary" type="button" data-admin-i18n="html.admin.156">Trang sau</button></div>
     </section>
+    <section id="pois-screen" class="admin-screen" aria-labelledby="pois-screen-title" hidden>
+    <div class="admin-heading"><div><p class="eyebrow" data-admin-i18n="html.admin.089">ĐIỂM ĐẾN &amp; NỘI DUNG</p><h1 id="pois-screen-title" data-admin-i18n="html.admin.090">Quản lý địa điểm POI</h1><p class="helper" data-admin-i18n="html.admin.091">Quản lý địa điểm tham quan, vị trí GPS và nội dung thuyết minh đa ngôn ngữ.</p></div><button id="reload-pois" type="button" class="button secondary" data-admin-i18n="html.admin.041">Làm mới dữ liệu</button></div>
     <p id="action-status" class="admin-message" role="status" aria-live="polite" hidden></p>
+    <div class="management-stats" aria-label="Thống kê POI" data-admin-i18n-aria-label="html.admin.018"><article><span data-admin-i18n="html.admin.043">TỔNG ĐỊA ĐIỂM</span><strong id="poi-stat-total">—</strong></article><article><span data-admin-i18n="html.admin.092">ĐANG HOẠT ĐỘNG</span><strong id="poi-stat-active">—</strong></article><article><span data-admin-i18n="html.admin.093">KHÔNG HOẠT ĐỘNG</span><strong id="poi-stat-inactive">—</strong></article></div>
     <div class="admin-list-actions">
-      <button id="new-poi" type="button" class="button primary">+ Thêm địa điểm</button>
+      <button id="new-poi" type="button" class="button primary" data-admin-i18n="html.admin.094">+ Thêm địa điểm</button>
     </div>
     <div class="admin-workspace">
       <section class="panel admin-list" aria-labelledby="list-title">
-        <div class="admin-section-heading"><h2 id="list-title">Danh sách địa điểm</h2><button id="reload-pois" type="button" class="button secondary">Tải lại</button></div>
+        <div class="admin-section-heading"><h2 id="list-title" data-admin-i18n="html.admin.095">Danh sách địa điểm</h2></div>
+        <form id="poi-search-form" class="voucher-search-form poi-search-form" role="search">
+          <div class="voucher-search-field"><label for="poi-search" data-admin-i18n="html.admin.096">Tìm kiếm địa điểm</label><input id="poi-search" type="search" placeholder="Tên hoặc địa chỉ" data-admin-i18n-placeholder="html.admin.019"></div>
+          <div class="voucher-search-field"><label for="poi-status-filter" data-admin-i18n="html.admin.058">Trạng thái</label><select id="poi-status-filter"><option value="all" data-admin-i18n="html.admin.074">Tất cả</option><option value="active" data-admin-i18n="html.admin.097">Đang hoạt động</option><option value="inactive" data-admin-i18n="html.admin.098">Không hoạt động</option></select></div>
+          <div class="voucher-search-field"><label for="poi-category-filter" data-admin-i18n="html.admin.099">Danh mục</label><select id="poi-category-filter"><option value="all" data-admin-i18n="html.admin.020">Tất cả danh mục</option></select></div>
+          <button id="poi-search-reset" class="button secondary" type="button" data-admin-i18n="html.admin.079">Đặt lại</button>
+          <button id="poi-search-submit" class="button primary" type="submit" data-admin-i18n="html.admin.080">Tìm kiếm</button>
+        </form>
         <p id="poi-count" class="helper"></p>
         <p id="list-status" class="helper" role="status"></p>
         <div class="admin-table-wrap">
           <table class="admin-table">
-            <caption class="sr-only">Các địa điểm hiện có trên hệ thống</caption>
-            <thead><tr><th scope="col">Địa điểm</th><th scope="col">Trạng thái</th><th scope="col">Thao tác</th></tr></thead>
+            <caption class="sr-only" data-admin-i18n="html.admin.100">Các địa điểm hiện có trên hệ thống</caption>
+            <thead><tr><th scope="col" data-admin-i18n="html.admin.157">STT</th><th scope="col" data-admin-i18n="html.admin.101">Địa điểm</th><th scope="col" data-admin-i18n="html.admin.102">Địa chỉ</th><th scope="col" data-admin-i18n="html.admin.103">Bán kính GPS</th><th scope="col" data-admin-i18n="html.admin.058">Trạng thái</th><th scope="col" data-admin-i18n="html.admin.104">Thao tác</th></tr></thead>
             <tbody id="poi-rows" aria-busy="false"></tbody>
           </table>
         </div>
+        <div class="management-pagination"><button id="poi-prev" class="button secondary" type="button" data-admin-i18n="html.admin.085">Trang trước</button><span id="poi-page">—</span><button id="poi-next" class="button secondary" type="button" data-admin-i18n="html.admin.156">Trang sau</button></div>
       </section>
 
       <div class="admin-editor">
-        <p id="selection-status" class="notice" role="status">Chọn “Quản lý” trong danh sách để mở địa điểm.</p>
+        <p id="selection-status" class="notice" role="status" data-admin-i18n="html.admin.105">Chọn “Quản lý” trong danh sách để mở địa điểm.</p>
         <section id="poi-panel" class="panel admin-panel" hidden aria-labelledby="poi-form-title" aria-busy="false">
-          <div class="admin-section-heading"><div><p class="eyebrow">01 · ĐỊA ĐIỂM</p><h2 id="poi-form-title">Thông tin địa điểm</h2></div><button id="cancel-edit" type="button" class="button secondary">Đóng</button></div>
+          <div class="admin-section-heading"><div><p class="eyebrow" data-admin-i18n="html.admin.106">01 · ĐỊA ĐIỂM</p><h2 id="poi-form-title" data-admin-i18n="html.admin.107">Thông tin địa điểm</h2></div><button id="cancel-edit" type="button" class="button secondary" data-admin-i18n="html.admin.108">Đóng</button></div>
           <p id="selected-id" class="helper"></p>
           <form id="poi-form" novalidate>
             <fieldset id="poi-fields" class="admin-fields">
+              <h3 data-admin-i18n="html.admin.107">Thông tin địa điểm</h3>
               <div class="admin-form-grid">
-                <div class="wide"><label for="poi-name">Tên địa điểm *</label><input id="poi-name" name="name" type="text" required aria-describedby="action-status"></div>
-                <div class="wide"><label for="poi-description">Mô tả địa điểm *</label><textarea id="poi-description" name="description" rows="3" required aria-describedby="action-status"></textarea></div>
-                <div><label for="poi-category">Loại *</label><input id="poi-category" name="category" type="text" placeholder="food, cafe, …" required aria-describedby="action-status"></div>
+                <div class="wide"><label for="poi-name" data-admin-i18n="html.admin.109">Tên địa điểm *</label><input id="poi-name" name="name" type="text" required aria-describedby="action-status"></div>
+                <div class="wide"><label for="poi-description" data-admin-i18n="html.admin.110">Mô tả địa điểm *</label><textarea id="poi-description" name="description" rows="3" required aria-describedby="action-status"></textarea></div>
+                <div><label for="poi-category" data-admin-i18n="html.admin.111">Loại *</label><input id="poi-category" name="category" type="text" placeholder="Món ăn, Tráng miệng, …" required aria-describedby="action-status"><p id="poi-category-display" class="helper" hidden></p></div>
                 <p id="poi-legacy-address" class="helper wide" hidden></p>
-                <div class="wide poi-address-combobox"><label for="poi-street-address">Địa chỉ / Số nhà, tên đường</label><input id="poi-street-address" name="streetAddress" type="text" maxlength="180" autocomplete="street-address" role="combobox" aria-autocomplete="list" aria-controls="poi-suggestions" aria-expanded="false"><div id="poi-suggestions" class="poi-suggestions" role="listbox" hidden></div></div>
-                <div><label for="poi-ward">Phường / Xã</label><input id="poi-ward" name="ward" type="text" maxlength="150"></div>
-                <div><label for="poi-city">Tỉnh / Thành phố</label><input id="poi-city" name="city" type="text" maxlength="150" autocomplete="address-level1"></div>
-                <div><label for="poi-radius">Bán kính geofence (m) *</label><input id="poi-radius" name="geofenceRadius" type="number" min="1" step="any" required></div>
-                <label class="admin-checkbox" for="poi-active"><input id="poi-active" name="isActive" type="checkbox">Đang hoạt động</label>
+                <div class="wide poi-address-combobox"><label for="poi-street-address" data-admin-i18n="html.admin.112">Địa chỉ / Số nhà, tên đường</label><input id="poi-street-address" name="streetAddress" type="text" maxlength="180" autocomplete="street-address" role="combobox" aria-autocomplete="list" aria-controls="poi-suggestions" aria-expanded="false"><div id="poi-suggestions" class="poi-suggestions" role="listbox" hidden></div></div>
+                <div><label for="poi-ward" data-admin-i18n="html.admin.113">Phường / Xã</label><input id="poi-ward" name="ward" type="text" maxlength="150"></div>
+                <div><label for="poi-city" data-admin-i18n="html.admin.114">Tỉnh / Thành phố</label><input id="poi-city" name="city" type="text" maxlength="150" autocomplete="address-level1"></div>
               </div>
+              <h3 data-admin-i18n="html.admin.115">Vị trí GPS</h3>
+              <div class="admin-form-grid">
+                <div><label for="poi-radius" data-admin-i18n="html.admin.116">Bán kính geofence (m) *</label><input id="poi-radius" name="geofenceRadius" type="number" min="1" step="any" required></div>
+                <label class="admin-checkbox" for="poi-active"><input id="poi-active" name="isActive" type="checkbox"><span data-admin-i18n="html.admin.097">Đang hoạt động</span></label>
+              </div>
+              <p id="poi-coordinates" class="helper" role="status" data-admin-i18n="html.admin.117">Chưa chọn vị trí GPS.</p>
               <p id="poi-suggestion-status" class="helper" role="status"></p>
-              <div class="poi-map-controls"><button id="poi-search-address" type="button" class="button secondary">Tìm địa chỉ</button><button id="poi-confirm-location" type="button" class="button secondary">Xác nhận vị trí</button></div>
-              <div id="poi-search-results" class="poi-search-results" aria-label="Kết quả tìm địa chỉ"></div>
+              <div class="poi-map-controls"><button id="poi-search-address" type="button" class="button secondary" data-admin-i18n="html.admin.118">Tìm địa chỉ</button><button id="poi-confirm-location" type="button" class="button secondary" data-admin-i18n="html.admin.119">Xác nhận vị trí</button></div>
+              <div id="poi-search-results" class="poi-search-results" aria-label="Kết quả tìm địa chỉ" data-admin-i18n-aria-label="html.admin.021"></div>
               <p id="poi-location-status" class="helper" role="status"></p>
-              <div id="poi-admin-map" aria-label="Bản đồ chọn vị trí địa điểm"></div>
+              <div id="poi-admin-map" aria-label="Bản đồ chọn vị trí địa điểm" data-admin-i18n-aria-label="html.admin.022"></div>
             </fieldset>
-            <div class="admin-actions"><button id="save-poi" type="submit" class="button primary">Lưu thay đổi</button><button id="delete-selected" type="button" class="button danger" hidden>Xóa POI</button></div>
+            <div class="admin-actions"><button id="save-poi" type="submit" class="button primary" data-admin-i18n="html.admin.120">Lưu thay đổi</button><button id="delete-selected" type="button" class="button danger" hidden data-admin-i18n="html.admin.121">Xóa POI</button></div>
           </form>
         </section>
 
         <section id="content-panel" class="panel admin-panel" hidden aria-labelledby="content-title" aria-busy="false">
-          <div class="admin-section-heading"><div><p class="eyebrow">02 · THUYẾT MINH &amp; AUDIO</p><h2 id="content-title">Nội dung đa ngôn ngữ</h2></div><button id="reload-content" type="button" class="button secondary">Tải lại nội dung</button></div>
+          <div class="admin-section-heading"><div><p class="eyebrow" data-admin-i18n="html.admin.122">02 · THUYẾT MINH &amp; AUDIO</p><h2 id="content-title" data-admin-i18n="html.admin.123">Nội dung đa ngôn ngữ</h2></div><button id="reload-content" type="button" class="button secondary" data-admin-i18n="html.admin.124">Tải lại nội dung</button></div>
+          <p id="selected-poi-summary" class="helper"></p>
           <p id="content-status" class="helper" role="status"></p>
+          <div class="language-tabs" role="tablist" aria-label="Ngôn ngữ thuyết minh" data-admin-i18n-aria-label="html.admin.023"><button id="language-tab-vi" type="button" role="tab" aria-selected="true" data-admin-i18n="html.admin.125">Tiếng Việt</button><button id="language-tab-en" type="button" role="tab" aria-selected="false">English</button><button id="language-tab-ja" type="button" role="tab" aria-selected="false">日本語</button><button id="language-tab-ko" type="button" role="tab" aria-selected="false">한국어</button></div>
+          <p id="translated-language-help" class="helper" hidden data-admin-i18n="html.admin.126">Nội dung ngôn ngữ này được tạo từ bản tiếng Việt. Chọn tab Tiếng Việt để lưu nội dung gốc, dịch hoặc tạo audio.</p>
           <form id="vi-form" novalidate>
-            <label for="vi-text">Nội dung gốc tiếng Việt</label>
-            <textarea id="vi-text" name="text" rows="5" lang="vi" placeholder="Nhập câu chuyện thuyết minh cho địa điểm…" aria-describedby="vi-help" required></textarea>
-            <p id="vi-help" class="helper">Lưu tiếng Việt trước khi dịch hoặc tạo audio.</p>
-            <div class="admin-actions"><button id="save-vi" type="submit" class="button primary">Lưu tiếng Việt</button><button id="translate" type="button" class="button secondary">Dịch VI → EN/JA/KO</button><button id="generate-all-audio" type="button" class="button secondary">Tạo audio 4 ngôn ngữ</button></div>
+            <label for="vi-text" data-admin-i18n="html.admin.127">Nội dung gốc tiếng Việt</label>
+            <textarea id="vi-text" name="text" rows="5" lang="vi" placeholder="Nhập câu chuyện thuyết minh cho địa điểm…" aria-describedby="vi-help" required data-admin-i18n-placeholder="html.admin.024"></textarea>
+            <p id="vi-help" class="helper" data-admin-i18n="html.admin.128">Lưu tiếng Việt trước khi dịch hoặc tạo audio.</p>
+            <div class="admin-actions"><button id="save-vi" type="submit" class="button primary" data-admin-i18n="html.admin.129">Lưu tiếng Việt</button><button id="translate" type="button" class="button secondary" data-admin-i18n="html.admin.130">Dịch VI → EN/JA/KO</button><button id="generate-all-audio" type="button" class="button secondary" data-admin-i18n="html.admin.131">Tạo audio 4 ngôn ngữ</button></div>
           </form>
-          <div id="content-action-notice" class="content-action-notice" role="status" aria-live="polite" hidden><span id="content-action-text"></span><button id="dismiss-content-action" type="button" aria-label="Đóng thông báo" hidden>×</button></div>
+          <div id="content-action-notice" class="content-action-notice" role="status" aria-live="polite" hidden><span id="content-action-text"></span><button id="dismiss-content-action" type="button" aria-label="Đóng thông báo" hidden data-admin-i18n-aria-label="html.admin.025" data-admin-i18n="html.admin.132">×</button></div>
           <p id="draft-status" class="helper" role="status"></p>
           <div id="language-cards" class="admin-language-grid"></div>
           <div class="admin-preview">
-            <p id="preview-status" class="helper" role="status">Chọn “Nghe” ở một ngôn ngữ để nghe thử.</p>
-            <audio id="preview-audio" controls preload="none" aria-label="Nghe thử audio thuyết minh" hidden></audio>
+            <p id="preview-status" class="helper" role="status" data-admin-i18n="html.admin.133">Chọn “Nghe” ở một ngôn ngữ để nghe thử.</p>
+            <audio id="preview-audio" controls preload="none" aria-label="Nghe thử audio thuyết minh" hidden data-admin-i18n-aria-label="html.admin.026"></audio>
           </div>
         </section>
       </div>
     </div>
-    <section id="account-management" class="panel admin-panel account-panel" aria-labelledby="account-title" hidden>
-      <div class="admin-section-heading"><h2 id="account-title">Quản lý tài khoản</h2><button id="reload-accounts" type="button" class="button secondary">Tải lại tài khoản</button></div>
-      <form id="account-form" class="admin-form-grid">
-        <div><label for="account-username">Username mới</label><input id="account-username" autocomplete="off" minlength="3" maxlength="64" required></div>
-        <div><label for="account-password">Mật khẩu mới</label><input id="account-password" type="password" autocomplete="new-password" minlength="12" required></div>
-        <div><label for="account-role">Vai trò</label><select id="account-role"><option value="POI_MANAGER">POI_MANAGER</option><option value="ADMIN">ADMIN</option></select></div>
-        <button id="create-account" type="submit" class="button primary">Tạo tài khoản</button>
-      </form>
-      <p id="account-status" class="helper" role="status">Thay đổi quyền, trạng thái hoặc mật khẩu sẽ thu hồi các phiên của tài khoản đó.</p>
-      <div class="admin-table-wrap"><table class="admin-table account-table"><thead><tr><th>Username</th><th>Vai trò</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody id="account-rows"></tbody></table></div>
     </section>
-    <footer class="site-footer"><span>Vị Giác · Chuẩn bị mỗi điểm đến, kể mỗi câu chuyện.</span></footer>
+    <section id="account-management" class="panel admin-panel account-panel" aria-labelledby="account-title" hidden>
+      <div class="admin-section-heading"><div><h2 id="account-title" data-admin-i18n="html.admin.008">Quản lý tài khoản</h2><p class="helper" data-admin-i18n="html.admin.134">Quản lý tài khoản quản trị và phân quyền truy cập hệ thống.</p></div><button id="reload-accounts" type="button" class="button secondary" data-admin-i18n="html.admin.041">Làm mới dữ liệu</button></div>
+      <div class="management-stats account-stats" aria-label="Thống kê tài khoản" data-admin-i18n-aria-label="html.admin.027"><article><span data-admin-i18n="html.admin.135">TỔNG TÀI KHOẢN</span><strong id="account-stat-total">—</strong></article><article><span data-admin-i18n="html.admin.160">QUẢN TRỊ VIÊN</span><strong id="account-stat-admin">—</strong></article><article><span data-admin-i18n="html.admin.161">QUẢN LÝ ĐỊA ĐIỂM</span><strong id="account-stat-manager">—</strong></article><article><span data-admin-i18n="html.admin.136">BỊ KHÓA</span><strong id="account-stat-locked">—</strong></article></div>
+      <h3 data-admin-i18n="html.admin.137">Tạo tài khoản mới</h3>
+      <form id="account-form" class="account-create-form" novalidate>
+        <div class="voucher-search-field"><label for="account-username" data-admin-i18n="html.admin.158">Tên đăng nhập</label><input id="account-username" autocomplete="off" minlength="3" maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9_.-]{2,63}" required placeholder="Nhập tên đăng nhập" data-admin-i18n-placeholder="html.admin.162" aria-describedby="account-username-error"><div class="account-create-error-slot"><p id="account-username-error" class="admin-field-error" role="status" hidden></p></div></div>
+        <div class="voucher-search-field"><label for="account-password" data-admin-i18n="html.admin.139">Mật khẩu</label><div class="account-password-field"><input id="account-password" type="password" autocomplete="new-password" minlength="12" required placeholder="Nhập mật khẩu" data-admin-i18n-placeholder="html.admin.163" aria-describedby="account-password-error"><button id="toggle-account-password" class="password-toggle" type="button" data-password-toggle="account-password" aria-pressed="false" aria-label="Hiện mật khẩu"><svg class="password-eye password-eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg><svg class="password-eye password-eye-off" viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 5.1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3.1 4M6.2 6.2A21 21 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5.8-1.8M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg></button></div><div class="account-create-error-slot"><p id="account-password-error" class="admin-field-error" role="status" hidden></p></div></div>
+        <div class="voucher-search-field"><label for="account-role" data-admin-i18n="html.admin.140">Vai trò</label><select id="account-role"><option value="POI_MANAGER" data-admin-i18n="html.admin.165">Quản lý địa điểm</option><option value="ADMIN" data-admin-i18n="html.admin.164">Quản trị viên</option></select></div>
+        <div class="account-create-action"><span class="account-create-action-label" aria-hidden="true">&nbsp;</span><button id="create-account" type="submit" class="button primary" data-admin-i18n="html.admin.141">Tạo tài khoản</button></div>
+      </form>
+      <p id="account-status" class="helper" role="status" hidden></p>
+      <form id="account-search-form" class="voucher-search-form account-search-form" role="search">
+      <div class="voucher-search-field">
+      <label for="account-search" data-admin-i18n="html.admin.143">Tìm kiếm tài khoản</label>
+      <input id="account-search" type="search" placeholder="Tên đăng nhập" data-admin-i18n-placeholder="html.admin.158">
+      </div>
+      <div class="voucher-search-field">
+      <label for="account-role-filter" data-admin-i18n="html.admin.140">Vai trò</label>
+      <select id="account-role-filter">
+      <option value="all" data-admin-i18n="html.admin.074">Tất cả</option>
+      <option value="ADMIN" data-admin-i18n="html.admin.164">Quản trị viên</option>
+      <option value="POI_MANAGER" data-admin-i18n="html.admin.165">Quản lý địa điểm</option>
+      </select>
+      </div>
+      <div class="voucher-search-field">
+      <label for="account-lock-filter" data-admin-i18n="html.admin.058">Trạng thái</label>
+      <select id="account-lock-filter">
+      <option value="all" data-admin-i18n="html.admin.074">Tất cả</option>
+      <option value="active" data-admin-i18n="html.admin.144">Hoạt động</option>
+      <option value="locked" data-admin-i18n="html.admin.145">Bị khóa</option>
+      </select>
+      </div>
+      <button id="account-search-reset" type="button" class="button secondary" data-admin-i18n="html.admin.166">Đặt lại</button>
+      <button id="account-search-submit" type="submit" class="button primary" data-admin-i18n="html.admin.167">Tìm kiếm</button>
+      </form>
+      <div class="admin-table-wrap"><table class="admin-table account-table"><thead><tr><th data-admin-i18n="html.admin.157">STT</th><th data-admin-i18n="html.admin.158">Username</th><th data-admin-i18n="html.admin.140">Vai trò</th><th data-admin-i18n="html.admin.058">Trạng thái</th><th data-admin-i18n="html.admin.104">Thao tác</th></tr></thead><tbody id="account-rows"></tbody></table></div>
+      <div class="management-pagination"><button id="account-prev" class="button secondary" type="button" data-admin-i18n="html.admin.085">Trang trước</button><span id="account-page">—</span><button id="account-next" class="button secondary" type="button" data-admin-i18n="html.admin.156">Trang sau</button></div>
+    </section>
+    <footer class="site-footer"><span data-admin-i18n="html.admin.146">Vị Giác · Chuẩn bị mỗi điểm đến, kể mỗi câu chuyện.</span></footer>
+    </div>
     </div>
   </main>
   <template id="poi-row-template">
-    <tr><td><strong class="row-name"></strong><span class="row-category helper"></span></td><td><span class="row-active badge"></span></td><td><div class="row-actions"><button class="row-manage button secondary" type="button">Quản lý</button><button class="row-delete button danger" type="button">Xóa</button></div></td></tr>
+    <tr><td class="row-number"></td><td><strong class="row-name"></strong><span class="row-category helper"></span></td><td class="row-address"></td><td class="row-radius"></td><td><span class="row-active badge"></span></td><td><div class="row-actions"><button class="row-manage button secondary" type="button" data-admin-i18n="html.admin.147">Quản lý</button><button class="row-delete button danger" type="button" data-admin-i18n="html.admin.148">Xóa</button></div></td></tr>
   </template>
   <template id="language-template">
     <article class="admin-language-card">
       <h3 class="language-name"></h3><p class="text-status helper"></p><div class="language-text" hidden></div><p class="audio-status helper" role="status"></p>
-      <div class="admin-actions"><button class="listen-audio button dark" type="button" hidden>▶ Nghe</button></div>
+      <div class="admin-actions"><button class="listen-audio button dark" type="button" hidden data-admin-i18n="html.admin.159">▶ Nghe</button></div>
     </article>
   </template>
+
+<div
+  id="poi-delete-modal"
+  class="poi-delete-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="poi-delete-title"
+  aria-describedby="poi-delete-description"
+  hidden
+>
+  <div class="poi-delete-modal__content">
+    <h2 id="poi-delete-title" data-admin-i18n="html.admin.187">Xác nhận xóa địa điểm</h2>
+
+    <p id="poi-delete-description">
+      Bạn có chắc chắn muốn xóa địa điểm này không? Thao tác này không thể hoàn tác.
+    </p>
+
+    <div class="poi-delete-modal__actions">
+      <button
+        id="poi-delete-cancel"
+        class="button secondary"
+        type="button"
+        data-admin-i18n="html.admin.188"
+      >
+        KHÔNG
+      </button>
+
+      <button
+        id="poi-delete-confirm"
+        class="button danger"
+        type="button"
+        data-admin-i18n="html.admin.189"
+      >
+        TIẾP TỤC
+      </button>
+    </div>
+  </div>
+</div>
+
+  <div id="account-password-modal" class="account-modal" role="dialog" aria-modal="true" aria-labelledby="account-modal-title" hidden>
+      <form id="account-password-form" class="account-modal-content" novalidate>
+      <h2 id="account-modal-title">
+      </h2>
+      <p id="account-modal-description" class="helper">
+      </p>
+      <div id="account-current-field" class="voucher-search-field">
+      <label for="account-current-password" data-admin-i18n="html.admin.168">Mật khẩu hiện tại</label>
+      <div class="account-password-field">
+      <input id="account-current-password" type="password" autocomplete="current-password" aria-describedby="account-current-password-error">
+      <button id="toggle-account-current-password" class="password-toggle" type="button" data-password-toggle="account-current-password" aria-pressed="false" aria-label="Hiện mật khẩu">
+      <svg class="password-eye password-eye-open" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/>
+      <circle cx="12" cy="12" r="3"/>
+      </svg>
+      <svg class="password-eye password-eye-off" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m3 3 18 18M10.6 5.1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3.1 4M6.2 6.2A21 21 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5.8-1.8M9.9 9.9a3 3 0 0 0 4.2 4.2"/>
+      </svg>
+      </button>
+      </div>
+      <p id="account-current-password-error" class="admin-field-error" role="status" hidden></p>
+      </div>
+      <div class="voucher-search-field">
+      <label for="account-new-password" data-admin-i18n="js.accounts.012">Mật khẩu mới</label>
+      <div class="account-password-field">
+      <input id="account-new-password" type="password" autocomplete="new-password" minlength="12" required aria-describedby="account-new-password-error">
+      <button id="toggle-account-new-password" class="password-toggle" type="button" data-password-toggle="account-new-password" aria-pressed="false" aria-label="Hiện mật khẩu">
+      <svg class="password-eye password-eye-open" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/>
+      <circle cx="12" cy="12" r="3"/>
+      </svg>
+      <svg class="password-eye password-eye-off" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m3 3 18 18M10.6 5.1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3.1 4M6.2 6.2A21 21 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5.8-1.8M9.9 9.9a3 3 0 0 0 4.2 4.2"/>
+      </svg>
+      </button>
+      </div>
+      <p id="account-new-password-error" class="admin-field-error" role="status" hidden></p>
+      </div>
+      <div class="voucher-search-field">
+      <label for="account-confirm-password" data-admin-i18n="html.admin.169">Xác nhận mật khẩu mới</label>
+      <div class="account-password-field">
+      <input id="account-confirm-password" type="password" autocomplete="new-password" minlength="12" required aria-describedby="account-confirm-password-error">
+      <button id="toggle-account-confirm-password" class="password-toggle" type="button" data-password-toggle="account-confirm-password" aria-pressed="false" aria-label="Hiện mật khẩu">
+      <svg class="password-eye password-eye-open" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/>
+      <circle cx="12" cy="12" r="3"/>
+      </svg>
+      <svg class="password-eye password-eye-off" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m3 3 18 18M10.6 5.1 12 5c6.5 0 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/>
+      </svg>
+      </button>
+      </div>
+      <p id="account-confirm-password-error" class="admin-field-error" role="status" hidden></p>
+      </div>
+      <p id="account-modal-status" class="helper" role="status">
+      </p>
+      <div class="account-modal-actions">
+      <button id="account-modal-cancel" class="button secondary" type="button" data-admin-i18n="html.admin.170">Hủy</button>
+      <button id="account-modal-submit" class="button primary" type="submit">
+      </button>
+      </div>
+      </form>
+      </div>
 </body>
 
 
@@ -193,8 +472,8 @@
   hidden
 >
   <div class="logout-modal__content">
-    <h2 id="admin-logout-title">Xác nhận đăng xuất</h2>
-    <p id="admin-logout-description">
+    <h2 id="admin-logout-title" data-admin-i18n="html.admin.149">Xác nhận đăng xuất</h2>
+    <p id="admin-logout-description" data-admin-i18n="html.admin.150">
       Bạn có chắc chắn muốn đăng xuất không?
     </p>
     <div class="logout-modal__actions">
@@ -202,12 +481,12 @@
         id="admin-logout-cancel"
         class="button secondary"
         type="button"
-      >Không</button>
+       data-admin-i18n="html.admin.151">Không</button>
       <button
         id="admin-logout-confirm"
         class="button primary"
         type="button"
-      >Tiếp tục</button>
+       data-admin-i18n="html.admin.152">Tiếp tục</button>
     </div>
   </div>
 </div>

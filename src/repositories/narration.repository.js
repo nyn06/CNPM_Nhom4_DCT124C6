@@ -1,1 +1,0 @@
-﻿module.exports = process.env.NODE_ENV === 'test' && process.env.DB_INTEGRATION !== '1' ? require('./narration.repository.memory') : require('./sql/narration.repository');

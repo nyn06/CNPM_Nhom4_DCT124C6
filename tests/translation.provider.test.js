@@ -86,6 +86,13 @@ it('JSON hỏng và lỗi kết nối được làm sạch', async () => {
   expect(error.message).not.toContain('SECRET');
 });
 
+it('dịch vụ không kết nối được trả 503 để worker ghi đúng nguyên nhân', async () => {
+  global.fetch.mockRejectedValueOnce(new TypeError('SECRET connection refused'));
+  const error = await translate().catch((failure) => failure);
+  expect(error.statusCode).toBe(503);
+  expect(error.message).not.toContain('SECRET');
+});
+
 it.each(['headers', 'body'])('timeout bao gồm thời gian chờ %s, hủy HTTP và trả 504', async (phase) => {
   process.env.TRANSLATION_TIMEOUT_MS = '200';
   global.fetch.mockImplementation((url, { signal }) => {

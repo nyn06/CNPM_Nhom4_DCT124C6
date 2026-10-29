@@ -11,6 +11,15 @@
   const access = window.TOUR_ACCESS;
   const tourMap = window.TOUR_MAP;
   const translations = window.TOUR_TRANSLATIONS;
+  const categoryCodes = { food: 'categoryFood', 'món ăn': 'categoryFood', drink: 'categoryDrink', 'đồ uống': 'categoryDrink', dessert: 'categoryDessert', 'tráng miệng': 'categoryDessert' };
+  const categoryLabel = (category) => {
+    const key = categoryCodes[String(category || '').trim().toLocaleLowerCase('vi-VN')];
+    return key ? t(key) : category;
+  };
+  const displayPoi = (poi) => {
+    const translated = poi.translations?.[byId('language').value];
+    return translated ? { ...poi, ...translated } : poi;
+  };
   const t = (key, params) => {
     const value = window.tourT(key, params);
     return value === key ? ({ locationUnknown: 'Chưa xác định vị trí',
@@ -39,6 +48,10 @@
   let realLocation = null;
   let simulatedLocation = null;
   let loadedPois = null;
+  let translationRefreshTimer = null;
+  let poiListRevision = 0;
+  let disposed = false;
+  let poiSearch = null;
   let poiCards = [];
   let poiOrder = [];
   let poiDistanceStatus = 'distanceEnableGps';
@@ -491,7 +504,7 @@
         .filter((part) => typeof part === 'string' && part.trim()).map((part) => part.trim()).join(', ');
       if (savedAddress || poi.address) {
         dynamicText.delete('nearest-address');
-        byId('nearest-address').textContent = savedAddress || poi.address;
+        byId('nearest-address').textContent = byId('language').value === 'vi' ? savedAddress || poi.address : poi.address || savedAddress;
       } else setText('nearest-address', 'noAddress');
       byId('nearest-description').textContent = poi.description || '';
       byId('nearest-distance').textContent = `${poi.distance.toLocaleString(byId('language').value, { maximumFractionDigits: 2 })} m`;
@@ -518,6 +531,7 @@
     try {
       // Cả GPS thật và giả lập dùng cùng API; geofence do Backend quyết định.
       const query = new URLSearchParams({ lat: location.latitude, lng: location.longitude });
+      if (byId('language').value !== 'vi') query.set('lang', byId('language').value);
       const data = await fetchJson(`/api/pois/nearby?${query}`, controller);
       if (requestId !== nearbyRequest || revision !== locationRevision) return;
       renderNearby(data, source);
@@ -718,21 +732,124 @@
     byId('simulation').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
+
+function normalizeSearch(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .trim();
+}
+
+function applyPoiSearch() {
+  if (!loadedPois) return;
+
+  const result = byId('poi-search-result');
+
+  if (!poiSearch) {
+    poiCards.forEach(({ card }) => {
+      card.hidden = false;
+    });
+    result.hidden = true;
+    return;
+  }
+
+  let count = 0;
+
+  for (const { poi, card } of poiCards) {
+    const address = [
+      poi.streetAddress,
+      poi.ward,
+      poi.city,
+      poi.address
+    ].filter(Boolean).join(' ');
+
+    const keywordMatch = !poiSearch.keyword ||
+      normalizeSearch(poi.name).includes(poiSearch.keyword) ||
+      normalizeSearch(address).includes(poiSearch.keyword);
+
+    const statusMatch = poiSearch.status === 'all' ||
+      (poiSearch.status === 'active' && poi.isActive === true) ||
+      (poiSearch.status === 'inactive' && poi.isActive !== true);
+
+    let distanceMatch = true;
+
+    if (poiSearch.distance !== 'all') {
+      const location = currentLocation?.source === 'GPS giả lập' ||
+        gpsActive ? currentLocation : null;
+
+      distanceMatch = validPoint(location) &&
+        validPoint(poi) &&
+        distanceMeters(location, poi) <= Number(poiSearch.distance);
+    }
+
+    const matched = keywordMatch && statusMatch && distanceMatch;
+
+    card.hidden = !matched;
+
+    if (matched) count++;
+  }
+
+  result.hidden = false;
+  setText(
+    'poi-search-result',
+    count > 0 ? 'searchResultCount' : 'searchNoResults',
+    { count }
+  );
+}
+
+  function searchPois(event) {
+    event.preventDefault();
+
+    if (!loadedPois) return;
+
+    const keyword = normalizeSearch(
+      byId('poi-search-keyword').value
+    );
+
+    const status = byId('poi-search-status').value;
+    const distance = byId('poi-search-distance').value;
+
+    const location = currentLocation?.source === 'GPS giả lập' ||
+      gpsActive ? currentLocation : null;
+    if (distance !== 'all' && !validPoint(location)) {
+      const result = byId('poi-search-result');
+      result.hidden = false;
+      setText('poi-search-result', 'searchNeedGps');
+
+      result.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+      return;
+    }
+    poiSearch = { keyword, status, distance };
+    applyPoiSearch();
+    byId('poi-search-result').scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    });
+  }
+
   function renderPoiList(pois) {
     loadedPois = pois;
+    scheduleTranslationRefresh();
     const list = byId('poi-list');
     list.replaceChildren();
     poiCards = [];
     poiOrder = [];
-    for (const [index, poi] of pois.entries()) {
+    for (const [index, original] of pois.entries()) {
+      const poi = displayPoi(original);
       const card = byId('poi-template').content.firstElementChild.cloneNode(true);
       const active = poi.isActive === true;
       card.dataset.inactive = String(!active);
       card.querySelector('.poi-name').textContent = poi.name;
-      card.querySelector('.poi-category').textContent = poi.category === 'food' ? t('foodCategory') : poi.category;
+      card.querySelector('.poi-category').textContent = categoryLabel(poi.category);
       const savedAddress = [poi.streetAddress, poi.ward, poi.city]
         .filter((part) => typeof part === 'string' && part.trim()).map((part) => part.trim()).join(', ');
-      card.querySelector('.poi-address').textContent = savedAddress || poi.address || t('noAddress');
+      card.querySelector('.poi-address').textContent = (byId('language').value === 'vi' ? savedAddress || poi.address : poi.address || savedAddress) || t('noAddress');
       card.querySelector('.poi-coordinates').textContent = `${poi.latitude}, ${poi.longitude}`;
       card.querySelector('.poi-radius').textContent = `${poi.geofenceRadius} m`;
       const status = card.querySelector('.poi-status');
@@ -751,12 +868,49 @@
       poiOrder.push(index);
     }
     updatePoiDistances();
+    applyPoiSearch();
     setText('poi-count', 'poiCount', { active: pois.filter((poi) => poi.isActive === true).length, total: pois.length });
     byId('poi-message').hidden = pois.length > 0;
     setMessage('poi-message', 'noPoiData');
   }
+  function refreshDisplayedPoi() {
+    if (!loadedPois) return;
+    tourMap?.setPois(loadedPois.map(displayPoi));
+    if (currentPoi) {
+      const source = loadedPois.find((poi) => poi.id === currentPoi.id);
+      if (source) currentPoi = displayPoi(source);
+    }
+    if (displayedNearbyPoi) {
+      const source = loadedPois.find((poi) => poi.id === displayedNearbyPoi.id);
+      if (source) {
+        const poi = displayPoi(source);
+        displayedNearbyPoi = { ...poi, distance: displayedNearbyPoi.distance };
+        byId('nearest-name').textContent = t('arrivedAtName', { name: poi.name });
+        byId('nearest-description').textContent = poi.description || '';
+        const parts = [poi.streetAddress, poi.ward, poi.city].filter(Boolean).join(', ');
+        byId('nearest-address').textContent = byId('language').value === 'vi' ? parts || poi.address : poi.address || parts;
+      }
+    }
+  }
+  function scheduleTranslationRefresh() {
+    clearTimeout(translationRefreshTimer);
+    if (disposed || !loadedPois?.some((poi) => poi.translationPending)) return;
+    const revision = poiListRevision;
+    translationRefreshTimer = setTimeout(async () => {
+      try {
+        const pois = await fetchJson('/api/pois', new AbortController());
+        if (revision !== poiListRevision) return;
+        if (!disposed && Array.isArray(pois)) {
+          renderPoiList(pois);
+          refreshDisplayedPoi();
+        } else if (!disposed) scheduleTranslationRefresh();
+      } catch { scheduleTranslationRefresh(); }
+    }, 15000);
+  }
 
   async function loadPois() {
+    ++poiListRevision;
+    clearTimeout(translationRefreshTimer);
     byId('reload-pois').disabled = true;
     byId('poi-list').setAttribute('aria-busy', 'true');
     byId('poi-list').replaceChildren();
@@ -769,11 +923,11 @@
     try {
       const pois = await fetchJson('/api/pois', new AbortController());
       if (!Array.isArray(pois)) throw new Error(t('invalidPoiList'));
-      tourMap?.setPois(pois);
       renderPoiList(pois);
+      refreshDisplayedPoi();
     } catch (error) {
       tourMap?.setPois([]);
-      tourMap?.setStatus(t('mapPoiLoadError'), 'error');
+      tourMap?.setStatus?.(t('mapPoiLoadError'), 'error');
       setMessage('poi-message', 'poiLoadRetry', 'error', { error: error.message });
       setText('poi-count', 'poiListUnavailable');
     } finally {
@@ -827,7 +981,10 @@
     setText('language-note', 'selectedLanguageHelp', { language: languageNames[language] });
     setText('audio-title', 'audioLanguage', { language: languageNames[language] });
     setText('narration-title', 'narrationLanguage', { language: languageNames[language] });
-    if (loadedPois) renderPoiList(loadedPois);
+    if (loadedPois) {
+      renderPoiList(loadedPois);
+      refreshDisplayedPoi();
+    }
     tourMap?.refreshLanguage?.();
     access.refreshLanguage?.();
     try { localStorage.setItem('poi-demo-language', language); } catch { /* Vẫn dùng được khi storage bị chặn. */ }
@@ -860,6 +1017,20 @@
   byId('toggle-tour').addEventListener('click', toggleTour);
   byId('simulation-form').addEventListener('submit', simulatePosition);
   byId('reload-pois').addEventListener('click', loadPois);
+  byId('poi-search-form').addEventListener('submit', searchPois);
+  byId('poi-search-reset').addEventListener('click', () => {
+    byId('poi-search-keyword').value = '';
+    byId('poi-search-status').value = 'all';
+    byId('poi-search-distance').value = 'all';
+
+    poiSearch = null;
+    applyPoiSearch();
+
+    byId('poi-list').scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    });
+  });
   byId('retry-narration').addEventListener('click', () => { if (currentPoi) loadNarration(currentPoi, true); });
   byId('generate-audio').addEventListener('click', generateAudio);
   byId('narration-audio').addEventListener('error', () => {
@@ -872,13 +1043,19 @@
     if (!valid) { disableAutoNarration(); clearNarration(); }
   });
   window.addEventListener('pagehide', () => {
+    disposed = true;
+    clearTimeout(translationRefreshTimer);
     disableAutoNarration(); stopTracking(); cancelNearby(); clearNarration();
     currentLocation = null;
     poiDistanceStatus = 'distanceEnableGps';
     updatePoiDistances();
     tourMap?.destroy();
   });
-  window.addEventListener('pageshow', (event) => { if (event.persisted) tourMap?.init(); });
+  window.addEventListener('pageshow', (event) => { if (event.persisted) {
+    disposed = false;
+    tourMap?.init();
+    scheduleTranslationRefresh();
+  } });
   tourMap?.init();
   showAddress(t('locationUnknown'), '—', '—', 'locationUnknown');
   loadPois();

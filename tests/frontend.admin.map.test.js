@@ -50,10 +50,12 @@ test('POI cũ mở tại tọa độ đã lưu; kéo ghim cần xác nhận lạ
   const ui = setup();
   ui.api.load({ latitude: 10, longitude: 106 });
   expect(ui.api.location()).toEqual({ latitude: 10, longitude: 106 });
+  expect(ui.getElementById('poi-coordinates').textContent).toContain('Latitude: 10.000000');
   ui.drag(11, 107);
   expect(ui.api.location()).toBeNull();
   ui.getElementById('poi-confirm-location').events.click();
   expect(ui.api.location()).toEqual({ latitude: 11, longitude: 107 });
+  expect(ui.getElementById('poi-coordinates').textContent).toContain('Đã xác nhận');
 });
 
 test('đổi địa chỉ làm vị trí cũ chờ xác nhận lại', () => {
@@ -260,6 +262,28 @@ test('thiếu key báo rõ và vẫn đặt ghim thủ công', async () => {
   } finally { jest.useRealTimers(); }
 });
 
+test.each([
+  ['GEOCODE_HTTP_504', 'phản hồi quá chậm'],
+  ['GEOCODE_HTTP_503', 'VietMap tạm thời không khả dụng'],
+  ['GEOCODE_NETWORK', 'Không kết nối'],
+  ['GEOCODE_INVALID_RESPONSE', 'dữ liệu không hợp lệ'],
+  ['GEOCODE_AUTH', 'chưa hợp lệ'],
+])('gợi ý báo đúng nguyên nhân %s và vẫn cho đặt ghim', async (code, message) => {
+  jest.useFakeTimers();
+  try {
+    const ui = setup();
+    ui.api.load(null);
+    ui.fetch.mockResolvedValueOnce({ ok: false, json: async () => ({ code }) });
+    const input = ui.getElementById('poi-street-address');
+    input.value = '40 Tú Xương'; input.events.input();
+    await jest.advanceTimersByTimeAsync(400);
+    expect(ui.getElementById('poi-suggestion-status').textContent).toContain(message);
+    ui.clickMap(10, 106);
+    ui.getElementById('poi-confirm-location').events.click();
+    expect(ui.api.location()).toEqual({ latitude: 10, longitude: 106 });
+  } finally { jest.useRealTimers(); }
+});
+
 test('timeout gợi ý không làm form treo', async () => {
   jest.useFakeTimers();
   try {
@@ -271,8 +295,8 @@ test('timeout gợi ý không làm form treo', async () => {
     const input = ui.getElementById('poi-street-address');
     input.value = 'Đường thử'; input.events.input();
     await jest.advanceTimersByTimeAsync(400);
-    await jest.advanceTimersByTimeAsync(11000);
-    expect(ui.getElementById('poi-suggestion-status').textContent).toContain('Không tải được gợi ý');
+    await jest.advanceTimersByTimeAsync(15000);
+    expect(ui.getElementById('poi-suggestion-status').textContent).toContain('phản hồi quá chậm');
     ui.clickMap(10, 106);
     ui.getElementById('poi-confirm-location').events.click();
     expect(ui.api.location()).toEqual({ latitude: 10, longitude: 106 });

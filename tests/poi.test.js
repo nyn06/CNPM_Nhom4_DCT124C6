@@ -182,7 +182,8 @@ describe('GET /api/pois', () => {
     const res = await request(app).get('/api/pois');
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual([first.body, second.body]);
+    expect(res.body).toMatchObject([first.body, second.body]);
+    expect(res.body[0].translations).toHaveProperty('en');
     expect(first.body.id).not.toBe(second.body.id);
   });
 });
@@ -293,7 +294,7 @@ describe('DELETE /api/pois/:id', () => {
     expect(fetched.body).toEqual({ error: 'Không tìm thấy POI' });
 
     const list = await request(app).get('/api/pois');
-    expect(list.body).toEqual([other.body]);
+    expect(list.body).toMatchObject([other.body]);
 
     const deletedAgain = await request(app).delete(`/api/pois/${created.body.id}`);
     expect(deletedAgain.statusCode).toBe(404);

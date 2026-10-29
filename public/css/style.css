@@ -133,6 +133,85 @@ input[aria-invalid="true"] { border-color: #b93d31; }
 .audio-content { flex: 1; min-width: 0; }
 #narration-audio { display: block; width: 100%; margin: 12px 0; }
 #generate-audio { margin-top: 10px; }
+
+/* Tim kiem dia diem */
+.poi-search-form {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) 140px auto;
+    align-items: end;
+    gap: 12px;
+    padding: 18px;
+    margin-bottom: 20px;
+    background: #fffefa;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+}
+
+.poi-search-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.poi-search-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.poi-search-field input,
+.poi-search-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+}
+
+/* Nút tìm kiếm địa điểm */
+#poi-search-button {
+    grid-column: 4;
+    grid-row: 1;
+
+    width: 140px;
+    min-height: 44px;
+    padding: 10px 20px;
+
+    justify-self: start;
+    align-self: end;
+
+    background: var(--orange);
+    color: white;
+    white-space: nowrap;
+
+    flex: none;
+    border: none;
+    border-radius: 8px;
+
+    font-size: 13px;
+    font-weight: 650;
+}
+
+#poi-search-result {
+  margin: 0 0 16px;
+}
+
+/* Man hinh nho */
+@media (max-width: 900px) {
+  .poi-search-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .poi-search-form {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  #poi-search-button {
+    width: 100%;
+  }
+}
 .poi-section { margin-top: 44px; scroll-margin-top: 20px; }
 .poi-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 21px; }
 .poi-section h2 { font-size: 25px; letter-spacing: -.7px; margin-top: 5px; }
@@ -237,4 +316,21 @@ input[aria-invalid="true"] { border-color: #b93d31; }
   .qr-actions .button {
     width: 100%;
   }
+}
+/* Thong bao ket qua tim kiem */
+#poi-search-result:not([hidden]) {
+  display: block;
+  padding: 12px 16px;
+  margin: 0 0 18px;
+  background: #fff3df;
+  border: 1px solid #edcfaa;
+  border-left: 4px solid var(--orange);
+  border-radius: 8px;
+  color: #805022;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+#poi-search-result {
+  scroll-margin-top: 100px;
 }

@@ -5,6 +5,7 @@ const { getPool, closePool } = require('../src/database/connection');
 const accounts = require('../src/repositories/account.repository');
 const auth = require('../src/repositories/auth.repository');
 const pois = require('../src/repositories/poi.repository');
+const translationJobs = require('../src/repositories/poi-translation-job.repository');
 const access = require('../src/repositories/access.repository');
 const accessService = require('../src/services/access.service');
 const { migrate } = require('../database/migrate');
@@ -18,6 +19,13 @@ beforeAll(async () => {
   await migrate();
 });
 afterAll(async () => { await closePool(); });
+
+test('migration removes only the two empty legacy tables', async () => {
+  const result = await (await getPool()).request().query(`SELECT name FROM sys.tables WHERE schema_id=SCHEMA_ID('dbo') ORDER BY name`);
+  const names = result.recordset.map((row) => row.name);
+  expect(names).toEqual(['Accounts', 'AdminSessions', 'GuestSessions', 'LoginChallenges', 'POINarrations',
+    'POIs', 'POITranslationJobs', 'POITranslations', 'SchemaMigrations', 'Vouchers']);
+});
 
 test('account, session, POI and multilingual audio metadata survive pool restart', async () => {
   const account = { id: id(), username: `test_${hash().slice(0, 20)}`, passwordHash: '$2b$12$abcdefghijklmnopqrstuu5dQLxvVdTZfxdZLzRqqxwPqDxhIGj9y',
@@ -47,6 +55,31 @@ test('account, session, POI and multilingual audio metadata survive pool restart
     await pool.request().input('id', poi.id).query('DELETE dbo.POIs WHERE Id=TRY_CONVERT(uniqueidentifier, @id)');
     await pool.request().input('id', account.id).query('DELETE dbo.AdminSessions WHERE AccountId=TRY_CONVERT(uniqueidentifier, @id)');
     await pool.request().input('id', account.id).query('DELETE dbo.Accounts WHERE Id=TRY_CONVERT(uniqueidentifier, @id)');
+  }
+});
+
+test('POI translation queue survives pool restart and guards job revision', async () => {
+  const poi = { id: id(), name: 'Bún bò', description: 'Món ăn', category: 'Món ăn',
+    address: 'Huế', streetAddress: '', ward: '', city: 'Huế', latitude: 16.46, longitude: 107.59, geofenceRadius: 50,
+    isActive: true, createdAt: now(), updatedAt: now() };
+  try {
+    await pois.create(poi);
+    await translationJobs.enqueue(poi.id);
+    await closePool();
+    const claimed = await translationJobs.claim();
+    expect(claimed).toMatchObject({ poiId: poi.id, attempts: 1 });
+    await translationJobs.enqueue(poi.id);
+    await translationJobs.complete(claimed);
+    const replacement = await translationJobs.claim();
+    expect(replacement).toMatchObject({ poiId: poi.id, revision: claimed.revision + 1, attempts: 1 });
+    await translationJobs.fail(replacement, 'PROVIDER_UNAVAILABLE');
+    const pool = await getPool();
+    const state = (await pool.request().input('id', poi.id).query(`SELECT Status, Attempts, LastErrorCode
+      FROM dbo.POITranslationJobs WHERE POIId=TRY_CONVERT(uniqueidentifier, @id)`)).recordset[0];
+    expect(state).toMatchObject({ Status: 'pending', Attempts: 1, LastErrorCode: 'PROVIDER_UNAVAILABLE' });
+  } finally {
+    const pool = await getPool();
+    await pool.request().input('id', poi.id).query('DELETE dbo.POIs WHERE Id=TRY_CONVERT(uniqueidentifier, @id)');
   }
 });
 

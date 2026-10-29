@@ -135,10 +135,10 @@ it('authenticated Admin generates and previews audio without a tourist voucher',
   await adminRequest(app).get(`/api/admin/audio/${filename}`).expect(200).expect('Content-Type', /audio\/wav/);
 });
 
-it.each(['production', 'development'])('disabled-by-default admin in %s cannot grant vouchers or expose legacy content', async (env) => {
+it.each(['production', 'development'])('disabled-by-default admin in %s cannot grant vouchers or expose admin audio', async (env) => {
   process.env.NODE_ENV = env;
   delete process.env.DEMO_ADMIN_ENABLED;
-  for (const url of ['/api/access/vouchers', '/api/narrations', `/api/admin/audio/${filename}`]) {
+  for (const url of ['/api/access/vouchers', `/api/admin/audio/${filename}`]) {
     await request(app).get(url).expect(401);
   }
   await request(app).get('/admin.html').expect(302).expect('Location', '/admin-login.html');

@@ -123,15 +123,68 @@ describe('VIETMAP server adapter', () => {
   );
 
   test('lỗi mạng không tiết lộ dữ liệu provider', async () => {
-    global.fetch.mockRejectedValueOnce(new Error('private upstream URL'));
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    global.fetch.mockRejectedValue(new Error('private upstream URL'));
     await expect(vietmap.suggest({ streetAddress: 'Đường thử', ward: '', city: '' }))
       .rejects.toMatchObject({ code: 'GEOCODE_NETWORK', statusCode: 503 });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(warning.mock.calls.flat().join(' ')).not.toContain('private upstream URL');
+    warning.mockRestore();
+  });
+
+  test.each([
+    ['ENOTFOUND', 'GEOCODE_DNS'], ['ERR_TLS_CERT_ALTNAME_INVALID', 'GEOCODE_TLS'],
+    ['UND_ERR_CONNECT_TIMEOUT', 'GEOCODE_TIMEOUT'], ['EACCES', 'GEOCODE_NETWORK'],
+  ])('lỗi kết nối %s được phân loại riêng', async (cause, code) => {
+    const warning = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    global.fetch.mockRejectedValue(Object.assign(new TypeError('fetch failed'), { cause: { code: cause } }));
+    await expect(vietmap.suggest({ streetAddress: 'Đường thử', ward: '', city: '' }))
+      .rejects.toMatchObject({ code, statusCode: 503 });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    warning.mockRestore();
+  });
+
+  test('VietMap 504 tạm thời được thử lại một lần và trả gợi ý', async () => {
+    global.fetch.mockResolvedValueOnce({ ok: false, status: 504 });
+    const items = await vietmap.suggest({ streetAddress: 'Tú Xương', ward: '', city: 'Thành phố Hồ Chí Minh' });
+    expect(items).toHaveLength(1);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('VietMap 504 kéo dài báo timeout riêng; kết quả rỗng không phải lỗi', async () => {
+    global.fetch.mockResolvedValue({ ok: false, status: 504 });
+    await expect(vietmap.suggest({ streetAddress: 'Tú Xương', ward: '', city: '' }))
+      .rejects.toMatchObject({ code: 'GEOCODE_HTTP_504', statusCode: 503 });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    global.fetch.mockClear().mockResolvedValue({ ok: true, json: async () => [] });
+    expect(await vietmap.suggest({ streetAddress: 'Không tồn tại 999999', ward: '', city: '' })).toEqual([]);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([502, 503])('VietMap HTTP %s được giữ riêng sau một lần thử lại', async (status) => {
+    global.fetch.mockResolvedValue({ ok: false, status });
+    await expect(vietmap.suggest({ streetAddress: 'Đường thử', ward: '', city: '' }))
+      .rejects.toMatchObject({ code: `GEOCODE_HTTP_${status}`, statusCode: 503 });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test('JSON sai định dạng không bị báo thành lỗi mạng', async () => {
+    global.fetch.mockResolvedValue({ ok: true, json: async () => { throw new SyntaxError('invalid JSON'); } });
+    await expect(vietmap.suggest({ streetAddress: 'Đường thử', ward: '', city: '' }))
+      .rejects.toMatchObject({ code: 'GEOCODE_INVALID_RESPONSE', statusCode: 503 });
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('danh sách toàn bản ghi sai cấu trúc không bị hiểu là không có địa chỉ', async () => {
+    global.fetch.mockResolvedValue({ ok: true, json: async () => [{ name: 'Địa chỉ thiếu ref_id' }] });
+    await expect(vietmap.suggest({ streetAddress: 'Đường thử', ward: '', city: '' }))
+      .rejects.toMatchObject({ code: 'GEOCODE_INVALID_RESPONSE', statusCode: 503 });
   });
 
   test('Place từ chối tọa độ provider không hợp lệ', async () => {
     const [item] = await vietmap.suggest({ streetAddress: 'Đường thử', ward: '', city: '' });
     global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ lat: null, lng: 106 }) });
-    await expect(vietmap.place(item.id)).rejects.toMatchObject({ code: 'GEOCODE_PROVIDER' });
+    await expect(vietmap.place(item.id)).rejects.toMatchObject({ code: 'GEOCODE_INVALID_RESPONSE' });
   });
 
   test('giới hạn tốc độ tổng theo tiến trình backend', async () => {

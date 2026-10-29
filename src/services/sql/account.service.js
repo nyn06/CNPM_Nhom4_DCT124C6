@@ -1,4 +1,5 @@
 ﻿const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const repository = require('../../repositories/account.repository');
 const authRepository = require('../../repositories/auth.repository');
 const { ROLES } = require('../../config/auth');
@@ -51,12 +52,14 @@ class AccountService {
     this._body(data, ['role', 'isLocked']);
     if (Object.hasOwn(data, 'role')) this._role(data.role);
     if (Object.hasOwn(data, 'isLocked') && typeof data.isLocked !== 'boolean') throw error('isLocked phải là boolean.', 400);
+    if (id === actorId && (Object.hasOwn(data, 'role') || data.isLocked === true)) throw error('Cannot change the role or lock the signed-in account.', 403);
     const updated = await repository.update(id, { ...data, updatedAt: new Date(Date.now()).toISOString() });
     await authRepository.revokeUser(id);
     return this.publicAccount(updated);
   }
   async resetPassword(id, data, actorId) {
     await this.assertAdmin(actorId);
+    if (id === actorId) throw error('Use the personal password change endpoint.', 403);
     this._body(data, ['password']);
     const current = await repository.findById(id);
     if (!current) throw error('Không tìm thấy tài khoản.', 404);
@@ -67,5 +70,20 @@ class AccountService {
     await authRepository.revokeUser(id);
     return this.publicAccount(updated);
   }
+
+  async changeOwnPassword(data, actorId) {
+    await this.assertAdmin(actorId);
+    this._body(data, ['currentPassword', 'newPassword']);
+    if (!Object.hasOwn(data, 'currentPassword') || !Object.hasOwn(data, 'newPassword')) throw error('Current and new passwords are required.', 400);
+    const current = await repository.findById(actorId);
+    if (typeof data.currentPassword !== 'string' || !await bcrypt.compare(data.currentPassword, current.passwordHash)) throw error('Current password is incorrect.', 400);
+    if (data.currentPassword === data.newPassword) throw error('New password must differ from the current password.', 400);
+    const hash = await passwordHash(data.newPassword);
+    await this.assertAdmin(actorId);
+    const updated = await repository.update(actorId, { passwordHash: hash, updatedAt: new Date(Date.now()).toISOString() }, current.version);
+    await authRepository.revokeUser(actorId);
+    return this.publicAccount(updated);
+  }
+
 }
 module.exports = new AccountService();

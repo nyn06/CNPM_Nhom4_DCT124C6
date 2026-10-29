@@ -59,7 +59,6 @@ it.each([
   ['get', '/api/admin/pois'], ['get', '/api/admin/pois/missing'], ['post', '/api/pois'], ['put', '/api/pois/missing'], ['delete', '/api/pois/missing'],
   ['put', '/api/pois/missing/narrations/vi'], ['post', '/api/pois/missing/translations'], ['post', '/api/pois/missing/narrations/vi/audio'],
   ['get', '/api/admin/audio/file.wav'], ['head', '/api/admin/audio/file.wav'], ['get', '/api/access/vouchers'], ['post', '/api/access/vouchers'],
-  ['get', '/api/narrations'], ['get', '/api/narrations/missing'], ['post', '/api/narrations'], ['get', '/api/jobs'], ['get', '/api/jobs/missing'], ['post', '/api/jobs'],
   ['get', '/api/accounts'], ['post', '/api/accounts'], ['patch', '/api/accounts/missing'], ['post', '/api/accounts/missing/password'],
 ])('admin API %s %s requires a real cookie despite localhost/demo settings', async (method, url) => {
   process.env.DEMO_ADMIN_ENABLED = 'true';
@@ -158,26 +157,36 @@ it('password reset revokes all sessions and accepts only the new password', asyn
   await call(fresh, 'get', '/api/admin/pois').expect(200);
 });
 
-it.each([{ role: 'POI_MANAGER' }, { isLocked: true }, { role: 'POI_MANAGER', isLocked: true }])('protects the last active ADMIN from %j', async (body) => {
+it.each([{ role: 'POI_MANAGER' }, { isLocked: true }, { role: 'POI_MANAGER', isLocked: true }])('forbids an ADMIN changing their own role or lock state with %j', async (body) => {
   const admin = await root();
-  await call(admin, 'patch', `/api/accounts/${seed.id}`, body).expect(409);
+  await call(admin, 'patch', `/api/accounts/${seed.id}`, body).expect(403);
   await call(admin, 'get', '/api/accounts').expect(200);
 });
 
-it('concurrent demotions cannot remove both active ADMINs', async () => {
+it('repository cannot remove the last active ADMIN even with concurrent updates', async () => {
   accounts.create({ ...seed, id: 'second-admin', username: 'second_admin' });
-  const first = await root(); const second = await login(app, 'second_admin', fixture.password);
-  const responses = await Promise.all([
-    call(first, 'patch', `/api/accounts/${seed.id}`, { role: 'POI_MANAGER' }),
-    call(second, 'patch', '/api/accounts/second-admin', { role: 'POI_MANAGER' }),
+  const responses = await Promise.allSettled([
+    Promise.resolve().then(() => accounts.update(seed.id, { role: 'POI_MANAGER' })),
+    Promise.resolve().then(() => accounts.update('second-admin', { role: 'POI_MANAGER' })),
   ]);
-  expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+  expect(responses.map((response) => response.status).sort()).toEqual(['fulfilled', 'rejected']);
   expect(accounts.findAll().filter((account) => account.role === 'ADMIN' && !account.isLocked)).toHaveLength(1);
 });
 
 it('a locked ADMIN does not count as a replacement for the last active ADMIN', async () => {
   accounts.create({ ...seed, id: 'locked-admin', username: 'locked_admin', isLocked: true });
-  await call(await root(), 'patch', `/api/accounts/${seed.id}`, { isLocked: true }).expect(409);
+  expect(() => accounts.update(seed.id, { isLocked: true })).toThrow();
+});
+
+it('ADMIN changes their own password only with the current password and loses old sessions', async () => {
+  const admin = await root();
+  await call(admin, 'post', `/api/accounts/${seed.id}/password`, { password: 'New-test-only-password' }).expect(403);
+  await call(admin, 'post', '/api/accounts/me/password', { currentPassword: 'wrong', newPassword: 'New-test-only-password' }).expect(400);
+  await call(admin, 'post', '/api/accounts/me/password', { currentPassword: fixture.password, newPassword: fixture.password }).expect(400);
+  await call(admin, 'post', '/api/accounts/me/password', { currentPassword: fixture.password, newPassword: 'New-test-only-password' }).expect(200);
+  await call(admin, 'get', '/api/accounts').expect(401);
+  expect((await login(app, fixture.username, fixture.password)).response.status).toBe(401);
+  await call(await login(app, fixture.username, 'New-test-only-password'), 'get', '/api/accounts').expect(200);
 });
 
 it('admin WAV revalidates session expiry after asynchronous filesystem lookup', async () => {

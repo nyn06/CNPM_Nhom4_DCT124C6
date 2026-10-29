@@ -1,5 +1,6 @@
 ﻿const { v4: uuidv4 } = require('uuid');
 const poiRepository = require('../../repositories/poi.repository');
+const translationJobs = require('../../repositories/poi-translation-job.repository');
 const { calculateDistanceInMeters } = require('../../utils/geo');
 const translationProvider = require('../../integrations/translation/translation.provider');
 const piperTtsProvider = require('../../integrations/tts/piperTts.provider');
@@ -13,12 +14,16 @@ class PoiService {
     const fields = this._preparePoi({ ...data, category, address, isActive });
     const now = new Date().toISOString();
 
-    return poiRepository.create({
+    const poi = await poiRepository.create({
       id: uuidv4(),
       ...fields,
       createdAt: now,
       updatedAt: now,
     });
+    try { await translationJobs.enqueue(poi.id); } catch {
+      console.error('POI saved; translation queue will reconcile later.');
+    }
+    return poi;
   }
 
   async getPois() {
@@ -73,10 +78,16 @@ class PoiService {
     // Giữ các trường không được gửi; chỉ lưu những trường được phép sửa.
     const fields = this._preparePoi({ ...existing, ...data });
 
-    return poiRepository.update(id, {
+    const poi = await poiRepository.update(id, {
       ...fields,
       updatedAt: new Date().toISOString(),
     });
+    if (['name', 'description', 'address'].some((field) => fields[field] !== existing[field])) {
+      try { await translationJobs.enqueue(id); } catch {
+        console.error('POI updated; translation queue will reconcile later.');
+      }
+    }
+    return poi;
   }
 
   async deletePoi(id) {

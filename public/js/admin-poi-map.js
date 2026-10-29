@@ -63,6 +63,7 @@
     reverseController = null;
     point = { latitude, longitude };
     confirmed = accepted;
+    byId('poi-coordinates').textContent = `Latitude: ${latitude.toFixed(6)} · Longitude: ${longitude.toFixed(6)}${accepted ? (window.ADMIN_I18N?.t('js.admin_poi_map.001') ?? ' · Đã xác nhận') : (window.ADMIN_I18N?.t('js.admin_poi_map.002') ?? ' · Chưa xác nhận')}`;
     if (map && !marker) {
       marker = window.L.marker([latitude, longitude], { draggable: true }).addTo(map);
       marker.on('dragend', () => {
@@ -73,7 +74,7 @@
     } else if (map) marker.setLatLng([latitude, longitude]);
     updateRadius();
     if (map) map.setView([latitude, longitude], Math.max(map.getZoom(), 16));
-    status(accepted ? 'Vị trí đã xác nhận.' : 'Vị trí đang chờ xác nhận. Kéo ghim để điều chỉnh nếu cần.');
+    status(accepted ? (window.ADMIN_I18N?.t('js.admin_poi_map.003') ?? 'Vị trí đã xác nhận.') : (window.ADMIN_I18N?.t('js.admin_poi_map.004') ?? 'Vị trí đang chờ xác nhận. Kéo ghim để điều chỉnh nếu cần.'));
   }
 
   async function reversePoint(latitude, longitude, revision) {
@@ -100,7 +101,7 @@
 
   function ensureMap() {
     if (!window.L?.map) {
-      status('Bản đồ chưa sẵn sàng. Bạn vẫn có thể tìm địa chỉ; hãy tải lại trang để đặt ghim.');
+      status((window.ADMIN_I18N?.t('js.admin_poi_map.005') ?? 'Bản đồ chưa sẵn sàng. Bạn vẫn có thể tìm địa chỉ; hãy tải lại trang để đặt ghim.'));
       return;
     }
     if (!map) {
@@ -113,7 +114,7 @@
       } catch {
         map?.remove();
         map = null;
-        status('Bản đồ chưa sẵn sàng. Bạn vẫn có thể tìm địa chỉ; hãy tải lại trang để đặt ghim.');
+        status((window.ADMIN_I18N?.t('js.admin_poi_map.005') ?? 'Bản đồ chưa sẵn sàng. Bạn vẫn có thể tìm địa chỉ; hãy tải lại trang để đặt ghim.'));
         return;
       }
     }
@@ -131,9 +132,10 @@
     if (radiusCircle) { radiusCircle.remove(); radiusCircle = null; }
     point = null;
     confirmed = false;
-    suggestionStatus('Nhập ít nhất 3 ký tự để xem gợi ý địa chỉ.');
+    byId('poi-coordinates').textContent = (window.ADMIN_I18N?.t('js.admin_poi_map.006') ?? 'Chưa chọn vị trí GPS.');
+    suggestionStatus((window.ADMIN_I18N?.t('js.admin_poi_map.007') ?? 'Nhập ít nhất 3 ký tự để xem gợi ý địa chỉ.'));
     if (valid(poi?.latitude, poi?.longitude)) setPoint(poi.latitude, poi.longitude, true);
-    else if (map) status('Tìm địa chỉ hoặc nhấp trên bản đồ để đặt ghim.');
+    else if (map) status((window.ADMIN_I18N?.t('js.admin_poi_map.008') ?? 'Tìm địa chỉ hoặc nhấp trên bản đồ để đặt ghim.'));
   }
 
   function clear() {
@@ -145,11 +147,12 @@
     if (radiusCircle) { radiusCircle.remove(); radiusCircle = null; }
     point = null;
     confirmed = false;
+    byId('poi-coordinates').textContent = (window.ADMIN_I18N?.t('js.admin_poi_map.006') ?? 'Chưa chọn vị trí GPS.');
     byId('poi-search-results').replaceChildren();
   }
 
   async function internalRequest(path, body, controller) {
-    const timer = setTimeout(() => controller.abort(), 11000);
+    const timer = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(path, { method: 'POST', credentials: 'same-origin', cache: 'no-store',
         signal: controller.signal, headers: { 'Content-Type': 'application/json', ...window.ADMIN_AUTH.headers('POST') },
@@ -166,7 +169,7 @@
     list.replaceChildren();
     options = Array.isArray(results) ? results.filter((item) => typeof item?.id === 'string'
       && typeof item.display === 'string').slice(0, 6) : [];
-    if (!options.length) { closeSuggestions(); suggestionStatus('Không có gợi ý. Bạn có thể tìm thủ công hoặc đặt ghim.'); return; }
+    if (!options.length) { closeSuggestions(); suggestionStatus((window.ADMIN_I18N?.t('js.admin_poi_map.009') ?? 'Không có gợi ý. Bạn có thể tìm thủ công hoặc đặt ghim.')); return; }
     options.forEach((item, index) => {
       const row = document.createElement('div');
       row.id = `poi-suggestion-${index}`;
@@ -183,7 +186,27 @@
     });
     list.hidden = false;
     byId('poi-street-address').setAttribute('aria-expanded', 'true');
-    suggestionStatus(`${options.length} gợi ý. Dùng phím mũi tên để chọn.`);
+    suggestionStatus((window.ADMIN_I18N?.t('js.admin_poi_map.010', [options.length]) ?? `${options.length} gợi ý. Dùng phím mũi tên để chọn.`));
+  }
+
+  function suggestionFailure(error) {
+    const code = error?.code;
+    const key = code === 'GEOCODE_NOT_CONFIGURED' ? '017'
+      : code === 'GEOCODE_AUTH' ? '018'
+        : ['GEOCODE_QUOTA', 'GEOCODE_RATE_LIMIT'].includes(code) ? '019'
+          : ['GEOCODE_HTTP_504', 'GEOCODE_TIMEOUT'].includes(code) || error?.name === 'AbortError' ? '029'
+            : ['GEOCODE_NETWORK', 'GEOCODE_DNS', 'GEOCODE_TLS'].includes(code) ? '030'
+              : ['GEOCODE_HTTP_502', 'GEOCODE_HTTP_503'].includes(code) ? '031'
+                : code === 'GEOCODE_INVALID_RESPONSE' ? '032' : '020';
+    return window.ADMIN_I18N?.t(`js.admin_poi_map.${key}`) ?? {
+      '017': 'Chưa cấu hình VIETMAP. Hãy dùng nút tìm thủ công hoặc đặt ghim.',
+      '018': 'Khóa VIETMAP chưa hợp lệ hoặc chưa được cấp quyền. Hãy dùng nút tìm thủ công.',
+      '019': 'Dịch vụ gợi ý đã đạt hạn mức. Hãy thử lại sau hoặc đặt ghim.',
+      '029': 'Dịch vụ gợi ý phản hồi quá chậm. Hãy thử lại hoặc đặt ghim.',
+      '030': 'Không kết nối được dịch vụ gợi ý. Hãy thử lại hoặc đặt ghim.',
+      '031': 'VietMap tạm thời không khả dụng. Hãy thử lại hoặc đặt ghim.',
+      '032': 'VietMap trả dữ liệu không hợp lệ. Hãy tìm thủ công hoặc đặt ghim.',
+    }[key] ?? 'Không tải được gợi ý. Bạn có thể tìm thủ công hoặc đặt ghim.';
   }
 
   function moveOption(step) {
@@ -204,7 +227,7 @@
     const revision = autoRevision;
     const controller = new AbortController();
     placeController = controller;
-    suggestionStatus('Đang lấy vị trí địa chỉ đã chọn…');
+    suggestionStatus((window.ADMIN_I18N?.t('js.admin_poi_map.011') ?? 'Đang lấy vị trí địa chỉ đã chọn…'));
     try {
       const detail = await internalRequest('/api/admin/geocode/place', { id: selected.id }, controller);
       if (revision !== autoRevision) return;
@@ -215,13 +238,13 @@
         if (typeof detail[field] === 'string' && detail[field].trim()) byId(`poi-${field}`).value = detail[field].trim();
       }
       setPoint(detail.latitude, detail.longitude);
-      suggestionStatus('Đã đặt ghim từ kết quả. Kiểm tra và xác nhận vị trí trước khi lưu.');
+      suggestionStatus((window.ADMIN_I18N?.t('js.admin_poi_map.012') ?? 'Đã đặt ghim từ kết quả. Kiểm tra và xác nhận vị trí trước khi lưu.'));
     } catch (error) {
       if (revision === autoRevision) suggestionStatus(error.code === 'GEOCODE_AUTH'
-        ? 'Khóa VIETMAP chưa hợp lệ hoặc chưa được cấp quyền. Hãy đặt ghim thủ công.'
+        ? (window.ADMIN_I18N?.t('js.admin_poi_map.013') ?? 'Khóa VIETMAP chưa hợp lệ hoặc chưa được cấp quyền. Hãy đặt ghim thủ công.')
         : error.code === 'GEOCODE_QUOTA' || error.code === 'GEOCODE_RATE_LIMIT'
-          ? 'Dịch vụ địa chỉ đã đạt hạn mức hoặc chưa được kích hoạt. Hãy đặt ghim thủ công.'
-          : 'Không lấy được vị trí gợi ý. Hãy tìm thủ công hoặc đặt ghim.');
+          ? (window.ADMIN_I18N?.t('js.admin_poi_map.014') ?? 'Dịch vụ địa chỉ đã đạt hạn mức hoặc chưa được kích hoạt. Hãy đặt ghim thủ công.')
+          : (window.ADMIN_I18N?.t('js.admin_poi_map.015') ?? 'Không lấy được vị trí gợi ý. Hãy tìm thủ công hoặc đặt ghim.'));
     } finally { if (placeController === controller) placeController = null; }
   }
 
@@ -230,27 +253,21 @@
     autoController = controller;
     const body = { streetAddress: byId('poi-street-address').value.trim(),
       ward: byId('poi-ward').value.trim(), city: byId('poi-city').value.trim() };
-    suggestionStatus('Đang tìm gợi ý…');
+    suggestionStatus((window.ADMIN_I18N?.t('js.admin_poi_map.016') ?? 'Đang tìm gợi ý…'));
     try {
       const data = await internalRequest('/api/admin/geocode/suggest', body, controller);
       if (revision === autoRevision) showOptions(data.results);
     } catch (error) {
       if (revision !== autoRevision) return;
       closeSuggestions();
-      suggestionStatus(error.code === 'GEOCODE_NOT_CONFIGURED'
-        ? 'Chưa cấu hình VIETMAP. Hãy dùng nút tìm thủ công hoặc đặt ghim.'
-        : error.code === 'GEOCODE_AUTH'
-          ? 'Khóa VIETMAP chưa hợp lệ hoặc chưa được cấp quyền. Hãy dùng nút tìm thủ công.'
-        : error.code === 'GEOCODE_QUOTA' || error.code === 'GEOCODE_RATE_LIMIT'
-          ? 'Dịch vụ gợi ý đã đạt hạn mức hoặc chưa được kích hoạt. Hãy thử lại sau hoặc đặt ghim.'
-          : 'Không tải được gợi ý. Bạn có thể tìm thủ công hoặc đặt ghim.');
+      suggestionStatus(suggestionFailure(error));
     } finally { if (autoController === controller) autoController = null; }
   }
 
   function scheduleAutocomplete() {
     cancelAutocomplete();
     const street = byId('poi-street-address').value.trim();
-    if (street.length < 3) { suggestionStatus('Nhập ít nhất 3 ký tự để xem gợi ý địa chỉ.'); return; }
+    if (street.length < 3) { suggestionStatus((window.ADMIN_I18N?.t('js.admin_poi_map.007') ?? 'Nhập ít nhất 3 ký tự để xem gợi ý địa chỉ.')); return; }
     const revision = autoRevision;
     autoTimer = setTimeout(() => suggest(revision), 400);
   }
@@ -263,14 +280,14 @@
       ward: byId('poi-ward').value.trim(), city: byId('poi-city').value.trim(),
     };
     if (Object.values(body).some((value) => !value)) {
-      status('Nhập số nhà/đường, phường/xã và tỉnh/thành phố trước khi tìm.');
+      status((window.ADMIN_I18N?.t('js.admin_poi_map.021') ?? 'Nhập số nhà/đường, phường/xã và tỉnh/thành phố trước khi tìm.'));
       return;
     }
     const revision = ++searchRevision;
     searching = true;
     byId('poi-search-address').disabled = true;
     byId('poi-search-results').replaceChildren();
-    status('Đang tìm địa chỉ…');
+    status((window.ADMIN_I18N?.t('js.admin_poi_map.022') ?? 'Đang tìm địa chỉ…'));
     try {
       const response = await fetch('/api/admin/geocode', { method: 'POST', credentials: 'same-origin', cache: 'no-store',
         headers: { 'Content-Type': 'application/json', ...window.ADMIN_AUTH.headers('POST') }, body: JSON.stringify(body) });
@@ -279,8 +296,8 @@
       const data = await response.json();
       if (revision !== searchRevision) return;
       const results = Array.isArray(data.results) ? data.results : [];
-      if (!results.length) { status('Không có kết quả. Bạn vẫn có thể đặt ghim trực tiếp trên bản đồ.'); return; }
-      status(`Có ${results.length} kết quả. Chọn địa chỉ đúng rồi xác nhận vị trí.`);
+      if (!results.length) { status((window.ADMIN_I18N?.t('js.admin_poi_map.023') ?? 'Không có kết quả. Bạn vẫn có thể đặt ghim trực tiếp trên bản đồ.')); return; }
+      status((window.ADMIN_I18N?.t('js.admin_poi_map.024', [results.length]) ?? `Có ${results.length} kết quả. Chọn địa chỉ đúng rồi xác nhận vị trí.`));
       for (const result of results) {
         if (!valid(result.latitude, result.longitude) || typeof result.label !== 'string') continue;
         const button = document.createElement('button');
@@ -291,7 +308,7 @@
         byId('poi-search-results').append(button);
       }
     } catch {
-      if (revision === searchRevision) status('Không tải được kết quả. Bạn vẫn có thể đặt ghim trực tiếp trên bản đồ.');
+      if (revision === searchRevision) status((window.ADMIN_I18N?.t('js.admin_poi_map.025') ?? 'Không tải được kết quả. Bạn vẫn có thể đặt ghim trực tiếp trên bản đồ.'));
     } finally {
       searching = false;
       byId('poi-search-address').disabled = false;
@@ -301,7 +318,7 @@
   for (const field of addressFields) byId(`poi-${field}`).addEventListener('input', () => {
     searchRevision++;
     byId('poi-search-results').replaceChildren();
-    if (point) { confirmed = false; status('Địa chỉ đã đổi. Kiểm tra ghim và xác nhận lại vị trí.'); }
+    if (point) { confirmed = false; status((window.ADMIN_I18N?.t('js.admin_poi_map.026') ?? 'Địa chỉ đã đổi. Kiểm tra ghim và xác nhận lại vị trí.')); }
     scheduleAutocomplete();
   });
   byId('poi-street-address').addEventListener('keydown', (event) => {
@@ -319,10 +336,23 @@
   byId('poi-radius').addEventListener('input', () => { if (map) updateRadius(); });
   byId('poi-search-address').addEventListener('click', search);
   byId('poi-confirm-location').addEventListener('click', () => {
-    if (!point) { status('Đặt ghim trên bản đồ trước khi xác nhận.'); return; }
+    if (!point) { status((window.ADMIN_I18N?.t('js.admin_poi_map.027') ?? 'Đặt ghim trên bản đồ trước khi xác nhận.')); return; }
     confirmed = true;
-    status('Vị trí đã xác nhận.');
+    byId('poi-coordinates').textContent = (window.ADMIN_I18N?.t('js.admin_poi_map.028', [point.latitude.toFixed(6), point.longitude.toFixed(6)]) ?? `Latitude: ${point.latitude.toFixed(6)} · Longitude: ${point.longitude.toFixed(6)} · Đã xác nhận`);
+    status((window.ADMIN_I18N?.t('js.admin_poi_map.003') ?? 'Vị trí đã xác nhận.'));
+  });
+  window.ADMIN_I18N?.onChange(() => {
+    const translate = window.ADMIN_I18N.t;
+    if (point) {
+      byId('poi-coordinates').textContent = `Latitude: ${point.latitude.toFixed(6)} · Longitude: ${point.longitude.toFixed(6)}${translate(confirmed ? 'js.admin_poi_map.001' : 'js.admin_poi_map.002')}`;
+      status(translate(confirmed ? 'js.admin_poi_map.003' : 'js.admin_poi_map.004'));
+    } else {
+      byId('poi-coordinates').textContent = translate('js.admin_poi_map.006');
+      if (map) status(translate('js.admin_poi_map.008'));
+    }
+    suggestionStatus(translate(options.length ? 'js.admin_poi_map.010' : 'js.admin_poi_map.007', [options.length]));
   });
   window.addEventListener('pagehide', () => { cancelAutocomplete(); if (map) map.remove(); map = null; });
-  window.ADMIN_POI_MAP = { load, clear, location: () => (confirmed && point ? { ...point } : null) };
+  window.ADMIN_POI_MAP = { load, clear, refresh: () => { if (map) setTimeout(() => map.invalidateSize(), 0); },
+    location: () => (confirmed && point ? { ...point } : null) };
 })();

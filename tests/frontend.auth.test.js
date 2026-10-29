@@ -6,7 +6,7 @@ const csrf = 'c'.repeat(64);
 const json = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
 const flush = () => jest.advanceTimersByTimeAsync(0);
 const element = () => ({
-  value: '', textContent: '', hidden: false, disabled: false, checked: false, events: {}, attributes: {}, children: [],
+  value: '', textContent: '', hidden: false, disabled: false, checked: false, dataset: {}, events: {}, attributes: {}, children: [],
   addEventListener(name, fn) { this.events[name] = fn; },
   setAttribute(name, value) { this.attributes[name] = value; },
   removeAttribute(name) { delete this.attributes[name]; },
@@ -29,7 +29,7 @@ function environment(html, fetch, auth) {
   const window = { ADMIN_AUTH: auth, location: { replace: jest.fn(), reload: jest.fn() }, addEventListener(name, fn) { (events[name] ||= []).push(fn); } };
   const storage = { getItem: jest.fn(() => { throw new Error('No storage permitted'); }), setItem: jest.fn(() => { throw new Error('No storage permitted'); }) };
   const context = { document: { getElementById: (id) => elements[id], createElement: element, createTextNode: (text) => ({ textContent: text }) }, window,
-    fetch, localStorage: storage, sessionStorage: storage, AbortController, Date, performance, TypeError, SyntaxError, setTimeout, clearTimeout, URL, encodeURIComponent };
+    fetch, localStorage: storage, sessionStorage: storage, AbortController, TextEncoder, Date, performance, TypeError, SyntaxError, setTimeout, clearTimeout, URL, encodeURIComponent };
   return { elements, events, window, context, storage };
 }
 async function loginUi() {
@@ -39,6 +39,11 @@ async function loginUi() {
     return url === '/api/auth/csrf' ? json({ csrfToken: csrf }, state.csrfStatus) : json({ error: 'SECRET internal path' }, state.loginStatus);
   });
   const ui = environment(read('admin-login.html'), fetch);
+  vm.runInNewContext(read('js/admin-translations.js'), ui.context);
+  let language = 'vi'; let listener;
+  ui.window.ADMIN_I18N = { t: (key, params = []) => (ui.window.ADMIN_TRANSLATIONS[language][key] || key)
+    .replace(/\{(\d+)\}/g, (_, index) => String(params[index])), onChange: (callback) => { listener = callback; },
+  setLanguage: (next) => { language = next; listener(next); } };
   vm.runInNewContext(read('js/admin-login.js'), ui.context); await flush();
   return { ...ui, fetch, state };
 }
@@ -121,6 +126,7 @@ it('login sends password with bound CSRF/credentials, clears password and naviga
 
 it.each([401, 403, 429, 500])('login failure HTTP %i is safe, clears password and restores controls', async (status) => {
   const ui = await loginUi(); ui.state.loginStatus = status;
+  ui.elements['login-username'].value = 'test_user';
   ui.elements['login-password'].value = 'test-only-password';
   await ui.elements['login-form'].events.submit({ preventDefault: jest.fn() });
   expect(ui.elements['login-status'].textContent).not.toContain('SECRET');
@@ -132,6 +138,7 @@ it.each([401, 403, 429, 500])('login failure HTTP %i is safe, clears password an
 
 it('login network failure and failed CSRF preparation can be retried explicitly', async () => {
   const ui = await loginUi(); ui.state.network = true;
+  ui.elements['login-username'].value = 'test_user'; ui.elements['login-password'].value = 'test-only-password';
   await ui.elements['login-form'].events.submit({ preventDefault: jest.fn() });
   expect(ui.elements['login-status'].textContent).toContain('Không kết nối');
   await ui.elements['login-retry'].events.click();
@@ -143,6 +150,7 @@ it('login network failure and failed CSRF preparation can be retried explicitly'
 
 it('login double-submit sends one request and pagehide aborts it without navigating late', async () => {
   const ui = await loginUi(); let finish;
+  ui.elements['login-username'].value = 'test_user'; ui.elements['login-password'].value = 'test-only-password';
   ui.context.fetch = jest.fn(() => new Promise((resolve) => { finish = resolve; }));
   const first = ui.elements['login-form'].events.submit({ preventDefault: jest.fn() });
   const second = ui.elements['login-form'].events.submit({ preventDefault: jest.fn() });
@@ -225,18 +233,26 @@ it('bfcache restore reloads the protected page and never keeps old content expos
   expect(ui.window.location.reload).toHaveBeenCalledTimes(1);
 });
 
-async function accountsUi(role = 'ADMIN') {
+async function accountsUi(role = 'ADMIN', withI18n = false) {
   const state = { status: 200, list: [{ id: 'manager', username: '<img onerror=alert(1)>', role: 'POI_MANAGER', isLocked: false }] };
   const auth = { current: () => ({ id: 'root', role }), ready: Promise.resolve({ id: 'root', role }), headers: () => ({ 'X-CSRF-Token': csrf }), handle: jest.fn(), expire: jest.fn(), onLost: jest.fn() };
   const fetch = jest.fn(async (url, options) => json(options.method === 'GET' ? state.list : { id: 'manager' }, state.status));
   const ui = environment(read('admin.html'), fetch, auth);
+  if (withI18n) {
+    vm.runInNewContext(read('js/admin-translations.js'), ui.context);
+    let language = 'vi';
+    let listener;
+    ui.window.ADMIN_I18N = { t: (key, params = []) => (ui.window.ADMIN_TRANSLATIONS[language][key] || key)
+      .replace(/\{(\d+)\}/g, (_, index) => String(params[index])), onChange: (callback) => { listener = callback; },
+    setLanguage: (next) => { language = next; listener(next); } };
+  }
   vm.runInNewContext(read('js/accounts.js'), ui.context); await flush();
   return { ...ui, state, auth, fetch };
 }
 
 it('accounts list uses textContent; creation sends only intended fields and clears password', async () => {
   const ui = await accountsUi();
-  expect(ui.elements['account-rows'].children[0].children[0].textContent).toBe(ui.state.list[0].username);
+  expect(ui.elements['account-rows'].children[0].children[1].textContent).toBe(ui.state.list[0].username);
   ui.elements['account-username'].value = 'new_manager'; ui.elements['account-password'].value = 'test-only-password'; ui.elements['account-role'].value = 'POI_MANAGER';
   ui.elements['account-form'].events.submit({ preventDefault: jest.fn() }); await flush();
   const [, options] = ui.fetch.mock.calls.find(([, options]) => options.method === 'POST');
@@ -245,22 +261,229 @@ it('accounts list uses textContent; creation sends only intended fields and clea
   expect(ui.elements['account-password'].value).toBe(''); expect(ui.storage.setItem).not.toHaveBeenCalled();
 });
 
-it('account UI can change role/lock and reset password, clearing reset input', async () => {
+it('tài khoản thống kê, tìm kiếm, lọc vai trò/trạng thái và phân trang', async () => {
+  const ui = await accountsUi();
+  ui.state.list = Array.from({ length: 12 }, (_, index) => ({ id: `account-${index}`, username: `user_${String(index).padStart(2, '0')}`,
+    role: index % 2 ? 'ADMIN' : 'POI_MANAGER', isLocked: index < 3 }));
+  ui.elements['reload-accounts'].events.click(); await flush();
+  expect(ui.elements['account-stat-total'].textContent).toBe('12');
+  expect(ui.elements['account-stat-admin'].textContent).toBe('6');
+  expect(ui.elements['account-stat-manager'].textContent).toBe('6');
+  expect(ui.elements['account-stat-locked'].textContent).toBe('3');
+  expect(ui.elements['account-rows'].children).toHaveLength(10);
+  ui.elements['account-next'].events.click();
+  expect(ui.elements['account-rows'].children).toHaveLength(2);
+  ui.elements['account-search'].value = 'user_0';
+  ui.elements['account-search-form'].events.submit({ preventDefault: jest.fn() });
+  expect(ui.elements['account-rows'].children).toHaveLength(10);
+  ui.elements['account-role-filter'].value = 'ADMIN';
+  ui.elements['account-search-form'].events.submit({ preventDefault: jest.fn() });
+  expect(ui.elements['account-rows'].children).toHaveLength(5);
+  ui.elements['account-lock-filter'].value = 'locked';
+  ui.elements['account-search-form'].events.submit({ preventDefault: jest.fn() });
+  expect(ui.elements['account-rows'].children).toHaveLength(1);
+  ui.elements['account-search-reset'].events.click();
+  expect(ui.elements['account-rows'].children).toHaveLength(10);
+});
+
+it('đổi ngôn ngữ tài khoản giữ nguyên vai trò, trạng thái khóa, mật khẩu và bộ lọc đang nhập', async () => {
+  const ui = await accountsUi('ADMIN', true);
+  const row = ui.elements['account-rows'].children[0];
+  const role = row.children[2].children[0];
+  role.value = 'ADMIN'; role.events.change();
+  ui.elements['account-password'].value = 'draft-password';
+  ui.elements['account-search'].value = '<img';
+  const requestCount = ui.fetch.mock.calls.length;
+  ui.window.ADMIN_I18N.setLanguage('ja');
+  expect(ui.elements['account-rows'].children[0]).toBe(row);
+  expect(role.value).toBe('ADMIN');
+  expect(ui.elements['account-password'].value).toBe('draft-password');
+  expect(ui.elements['account-search'].value).toBe('<img');
+  expect(row.children[4].children[0].children[0].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.ja['js.accounts.010']);
+  expect(role.children[0].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.ja['html.admin.164']);
+  expect(ui.fetch.mock.calls).toHaveLength(requestCount);
+});
+
+it('account UI changes role, lock and password through separate actions', async () => {
   const ui = await accountsUi();
   let row = ui.elements['account-rows'].children[0];
-  row.children[1].children[0].value = 'ADMIN'; row.children[2].children[0].children[0].checked = true;
-  row.children[3].children[0].events.click(); await flush();
+  const role = row.children[2].children[0];
+  const save = row.children[4].children[0].children[0];
+  expect(save.disabled).toBe(true);
+  role.value = 'ADMIN'; role.events.change(); expect(save.disabled).toBe(false);
+  save.events.click(); await flush();
   const patch = ui.fetch.mock.calls.find(([, options]) => options.method === 'PATCH');
-  expect(JSON.parse(patch[1].body)).toEqual({ role: 'ADMIN', isLocked: true });
+  expect(JSON.parse(patch[1].body)).toEqual({ role: 'ADMIN' });
   row = ui.elements['account-rows'].children[0];
-  const password = row.children[3].children[1]; password.value = 'test-only-new-password';
-  row.children[3].children[2].events.click(); await flush();
+  row.children[4].children[0].children[1].events.click(); await flush();
+  expect(JSON.parse(ui.fetch.mock.calls.filter(([, options]) => options.method === 'PATCH')[1][1].body)).toEqual({ isLocked: true });
+  row = ui.elements['account-rows'].children[0];
+  row.children[4].children[0].children[2].events.click();
+  ui.elements['account-new-password'].value = 'test-only-new-password';
+  ui.elements['account-confirm-password'].value = 'test-only-new-password';
+  ui.elements['account-password-form'].events.submit({ preventDefault: jest.fn() }); await flush();
   const reset = ui.fetch.mock.calls.find(([url]) => url.endsWith('/password'));
-  expect(JSON.parse(reset[1].body)).toEqual({ password: 'test-only-new-password' }); expect(password.value).toBe('');
+  expect(JSON.parse(reset[1].body)).toEqual({ password: 'test-only-new-password' });
+  expect(ui.elements['account-new-password'].value).toBe('');
+});
+
+it('signed-in ADMIN cannot lock or demote themselves, but can change their own password', async () => {
+  const ui = await accountsUi();
+  ui.state.list = [{ id: 'root', username: 'root_admin', role: 'ADMIN', isLocked: false }];
+  ui.elements['reload-accounts'].events.click(); await flush();
+  const row = ui.elements['account-rows'].children[0];
+  const actions = row.children[4].children[0].children;
+  expect(row.children[2].children[0].disabled).toBe(true);
+  expect(actions[0].disabled).toBe(true);
+  expect(actions[1].disabled).toBe(true);
+  actions[0].events.click(); actions[1].events.click();
+  expect(ui.fetch.mock.calls.filter(([, options]) => options.method === 'PATCH')).toHaveLength(0);
+  actions[2].events.click();
+  expect(ui.elements['account-current-field'].hidden).toBe(false);
+  ui.elements['account-current-password'].value = 'test-only-password';
+  ui.elements['account-new-password'].value = 'different-test-only-password';
+  ui.elements['account-confirm-password'].value = 'different-test-only-password';
+  const before = ui.fetch.mock.calls.length;
+  ui.elements['account-password-form'].events.submit({ preventDefault: jest.fn() }); await flush();
+  const own = ui.fetch.mock.calls.find(([url]) => url === '/api/accounts/me/password');
+  expect(JSON.parse(own[1].body)).toEqual({ currentPassword: 'test-only-password', newPassword: 'different-test-only-password' });
+  expect(ui.fetch.mock.calls.slice(before).map(([url]) => url)).toEqual(['/api/accounts/me/password']);
+  expect(ui.elements['account-password-modal'].hidden).toBe(true);
+});
+
+it('account password eyes retain the typed value and modal resets to hidden', async () => {
+  const ui = await accountsUi();
+  const input = ui.elements['account-password'];
+  input.value = 'test-only-password';
+  ui.elements['toggle-account-password'].events.click();
+  expect(input.type).toBe('text'); expect(input.value).toBe('test-only-password');
+  ui.elements['toggle-account-password'].events.click(); expect(input.type).toBe('password');
+  ui.elements['account-rows'].children[0].children[4].children[0].children[2].events.click();
+  const modalInput = ui.elements['account-new-password'];
+  modalInput.value = 'another-test-only-password';
+  ui.elements['toggle-account-new-password'].events.click();
+  expect(modalInput.type).toBe('text'); expect(modalInput.value).toBe('another-test-only-password');
+  ui.elements['account-modal-cancel'].events.click();
+  expect(modalInput.value).toBe(''); expect(modalInput.type).toBe('password');
+});
+
+it('account creation has stable validation slots and no session-revocation description', async () => {
+  const markup = read('admin.html');
+  const styles = read('css/admin.css');
+  expect(markup).not.toContain('Thay đổi quyền, trạng thái hoặc mật khẩu sẽ thu hồi các phiên');
+  expect(markup).toMatch(/id="account-status"[^>]*hidden/);
+  expect(markup.match(/class="account-create-error-slot"/g)).toHaveLength(2);
+  expect(styles).toMatch(/#account-form\s*\{[^}]*align-items:\s*start/);
+  expect(styles).toMatch(/\.account-create-error-slot\s*\{[^}]*min-height:/);
+  const ui = await accountsUi('ADMIN', true);
+  expect(ui.elements['account-status'].hidden).toBe(true);
+  ui.elements['account-username'].value = 'new_manager'; ui.elements['account-password'].value = 'secret';
+  ui.elements['account-form'].events.submit({ preventDefault: jest.fn() });
+  expect(ui.elements['account-password-error'].hidden).toBe(false);
+  expect(ui.elements['account-status'].hidden).toBe(true);
+  ui.elements['toggle-account-password'].events.click();
+  expect(ui.elements['account-password'].type).toBe('text');
+  expect(ui.elements['account-password-error'].hidden).toBe(false);
+});
+
+it.each(['vi', 'en', 'ja', 'ko'])('account password length error uses %s and updates while typing', async (language) => {
+  const ui = await accountsUi('ADMIN', true);
+  ui.window.ADMIN_I18N.setLanguage(language);
+  ui.elements['account-username'].value = 'new_manager';
+  ui.elements['account-password'].value = 'secret';
+  const requests = ui.fetch.mock.calls.length;
+  ui.elements['account-form'].events.submit({ preventDefault: jest.fn() });
+  expect(ui.elements['account-password-error'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS[language]['js.accounts.025'].replace('{0}', '6'));
+  expect(ui.elements['account-password-error'].hidden).toBe(false);
+  expect(ui.elements['account-password'].attributes['aria-invalid']).toBe('true');
+  expect(ui.fetch).toHaveBeenCalledTimes(requests);
+  ui.elements['account-password'].value = 'test-only-password';
+  ui.elements['account-password'].events.input();
+  expect(ui.elements['account-password-error'].hidden).toBe(true);
+  expect(ui.elements['account-password'].attributes['aria-invalid']).toBe('false');
+});
+
+it('active account errors translate immediately without losing input or duplicating messages', async () => {
+  const ui = await accountsUi('ADMIN', true);
+  ui.elements['account-username'].value = 'new_manager'; ui.elements['account-password'].value = 'secret';
+  ui.elements['account-form'].events.submit({ preventDefault: jest.fn() });
+  ui.window.ADMIN_I18N.setLanguage('ja');
+  expect(ui.elements['account-password'].value).toBe('secret');
+  expect(ui.elements['account-password-error'].textContent).toBe('パスワードは12文字以上で入力してください（現在6文字）。');
+  ui.elements['account-username'].value = '';
+  ui.elements['account-form'].events.submit({ preventDefault: jest.fn() });
+  expect(ui.elements['account-username-error'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.ja['js.accounts.027']);
+});
+
+it('duplicate username response stays attached to the field across language changes', async () => {
+  const ui = await accountsUi('ADMIN', true);
+  ui.state.status = 409;
+  ui.elements['account-username'].value = 'existing_user';
+  ui.elements['account-password'].value = 'test-only-password';
+  ui.elements['account-form'].events.submit({ preventDefault: jest.fn() }); await flush();
+  expect(ui.elements['account-username-error'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.vi['js.accounts.031']);
+  ui.window.ADMIN_I18N.setLanguage('en');
+  expect(ui.elements['account-username-error'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.en['js.accounts.031']);
+  expect(ui.elements['account-username'].value).toBe('existing_user');
+  ui.elements['account-username'].value = 'different_user'; ui.elements['account-username'].events.input();
+  expect(ui.elements['account-username-error'].hidden).toBe(true);
+});
+
+it('modal confirmation and current password errors are localized inline', async () => {
+  const ui = await accountsUi('ADMIN', true);
+  ui.state.list = [{ id: 'root', username: 'root_admin', role: 'ADMIN', isLocked: false }];
+  ui.elements['reload-accounts'].events.click(); await flush();
+  ui.elements['account-rows'].children[0].children[4].children[0].children[2].events.click();
+  ui.elements['account-current-password'].value = 'current-password';
+  ui.elements['account-new-password'].value = 'different-password';
+  ui.elements['account-confirm-password'].value = 'wrong-password';
+  ui.elements['account-password-form'].events.submit({ preventDefault: jest.fn() });
+  expect(ui.elements['account-confirm-password-error'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.vi['html.admin.183']);
+  ui.window.ADMIN_I18N.setLanguage('ko');
+  expect(ui.elements['account-confirm-password-error'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.ko['html.admin.183']);
+  ui.elements['account-confirm-password'].value = 'different-password';
+  ui.elements['account-confirm-password'].events.input();
+  expect(ui.elements['account-confirm-password-error'].hidden).toBe(true);
+  ui.state.status = 400;
+  ui.elements['account-password-form'].events.submit({ preventDefault: jest.fn() }); await flush();
+  expect(ui.elements['account-current-password-error'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.ko['html.admin.186']);
+});
+
+it('reset modal blocks a short password and translates its live character count', async () => {
+  const ui = await accountsUi('ADMIN', true);
+  ui.elements['account-rows'].children[0].children[4].children[0].children[2].events.click();
+  ui.elements['account-new-password'].value = 'secret';
+  ui.elements['account-confirm-password'].value = 'secret';
+  const requests = ui.fetch.mock.calls.length;
+  ui.elements['account-password-form'].events.submit({ preventDefault: jest.fn() });
+  expect(ui.elements['account-new-password-error'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.vi['js.accounts.025'].replace('{0}', '6'));
+  ui.window.ADMIN_I18N.setLanguage('en');
+  expect(ui.elements['account-new-password-error'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.en['js.accounts.025'].replace('{0}', '6'));
+  expect(ui.fetch).toHaveBeenCalledTimes(requests);
+});
+
+it('login required fields use inline localized validation and never call the API', async () => {
+  const ui = await loginUi(); const requests = ui.fetch.mock.calls.length;
+  await ui.elements['login-form'].events.submit({ preventDefault: jest.fn() });
+  expect(ui.elements['login-username-error'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.vi['js.admin_login.011']);
+  expect(ui.elements['login-password-error'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.vi['js.admin_login.012']);
+  expect(ui.fetch).toHaveBeenCalledTimes(requests);
+  ui.window.ADMIN_I18N.setLanguage('en');
+  expect(ui.elements['login-username-error'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.en['js.admin_login.011']);
+  ui.elements['login-username'].value = 'test_user'; ui.elements['login-username'].events.input();
+  expect(ui.elements['login-username-error'].hidden).toBe(true);
+});
+
+it('account and login forms bypass native constraint bubbles but retain constraints', () => {
+  expect(read('admin.html')).toMatch(/<form id="account-form"[^>]*novalidate/);
+  expect(read('admin.html')).toMatch(/<form id="account-password-form"[^>]*novalidate/);
+  expect(read('admin.html')).toMatch(/id="account-password"[^>]*minlength="12"[^>]*required/);
+  expect(read('admin-login.html')).toMatch(/<form id="login-form"[^>]*novalidate/);
 });
 
 it.each([400, 403, 409, 500])('account mutation HTTP %i restores controls and clears password without showing raw response', async (status) => {
   const ui = await accountsUi(); ui.state.status = status;
+  ui.elements['account-username'].value = 'new_manager';
   ui.elements['account-password'].value = 'test-only-password';
   ui.elements['account-form'].events.submit({ preventDefault: jest.fn() }); await flush();
   expect(ui.elements['account-status'].textContent).not.toContain('SECRET');

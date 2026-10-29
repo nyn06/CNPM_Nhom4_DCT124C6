@@ -28,7 +28,7 @@ function element() {
     addEventListener(event, callback) { this.events[event] = callback; },
     append(...children) { this.children.push(...children); },
     replaceChildren(...children) { this.children = children; },
-    focus: jest.fn(), pause: jest.fn(), play: jest.fn().mockResolvedValue(), load: jest.fn(),
+    focus: jest.fn(), scrollIntoView: jest.fn(), pause: jest.fn(), play: jest.fn().mockResolvedValue(), load: jest.fn(),
   };
 }
 function template(selectors) {
@@ -40,12 +40,13 @@ function template(selectors) {
   } } } };
 }
 
-async function setup({ pois = [{ ...basePoi, narrations: content() }] } = {}) {
+async function setup({ pois = [{ ...basePoi, narrations: content() }], withI18n = false } = {}) {
   const elements = Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => [match[1], element()]));
-  elements['poi-row-template'] = template(['.row-name', '.row-category', '.row-active', '.row-manage', '.row-delete']);
+  elements['poi-row-template'] = template(['.row-number', '.row-name', '.row-category', '.row-address', '.row-radius', '.row-active', '.row-manage', '.row-delete']);
   elements['language-template'] = template(['.language-name', '.language-text', '.text-status', '.audio-status', '.listen-audio']);
   elements['poi-panel'].hidden = true;
   elements['content-panel'].hidden = true;
+  elements['poi-delete-modal'].hidden = true;
   const state = { pois: copy(pois), overrides: new Map(), audioVersion: 0 };
   const fetch = jest.fn(async (url, options) => {
     // Existing content tests exercise transport under an established session.
@@ -72,9 +73,23 @@ async function setup({ pois = [{ ...basePoi, narrations: content() }] } = {}) {
     if (!suffix) {
       if (options.method === 'DELETE') { state.pois = state.pois.filter((item) => item !== poi); return json(null, 204); }
       if (options.method === 'PUT') Object.assign(poi, body, { updatedAt: 'v2' });
-      return json(poi);
+      return json(options.method === 'GET' ? { ...poi, translations: undefined } : poi);
     }
     if (suffix === '/narrations') return json({ poiId: poi.id, narrations: poi.narrations || {} });
+    if (suffix === '/details-translations' && options.method === 'POST') {
+      poi.translations ||= {};
+      for (const language of body.targetLanguages) {
+        poi.translations[language] = { name: `${language}: ${poi.name}`,
+          description: `${language}: ${poi.description}`, address: `${language}: ${poi.address}`, stale: {} };
+      }
+      return json({ poiId: poi.id, translations: poi.translations });
+    }
+    if (suffix.startsWith('/details-translations/') && options.method === 'PUT') {
+      const language = suffix.split('/')[2];
+      poi.translations ||= {};
+      poi.translations[language] = { ...poi.translations[language], ...body, stale: {} };
+      return json(poi.translations[language]);
+    }
     if (suffix === '/translations') {
       for (const code of body.targetLanguages) poi.narrations[code] = { text: `Translated ${code}` };
       return json({ poiId: poi.id, sourceLanguage: 'vi', translations: Object.fromEntries(body.targetLanguages.map((code) => [code, poi.narrations[code]])) });
@@ -98,7 +113,16 @@ async function setup({ pois = [{ ...basePoi, narrations: content() }] } = {}) {
     confirm: (latitude, longitude) => { mapState.point = { latitude, longitude }; },
   } };
   window.ADMIN_AUTH = { ready: Promise.resolve({ id: 'admin', role: 'ADMIN' }), headers: () => ({ 'X-CSRF-Token': 'fixture' }), handle: jest.fn(), onLost: jest.fn() };
-  vm.runInNewContext(scripts, { document: { getElementById: (id) => elements[id] }, window, fetch, AbortController, setTimeout, clearTimeout });
+  if (withI18n) {
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../public/js/admin-translations.js'), 'utf8'), { window });
+    let language = 'vi';
+    let listener;
+    window.ADMIN_I18N = { t: (key, params = []) => (window.ADMIN_TRANSLATIONS[language][key] || key)
+      .replace(/\{(\d+)\}/g, (_, index) => String(params[index])), onChange: (callback) => { listener = callback; },
+    language: () => language, setLanguage: (next) => { language = next; listener(next); } };
+  }
+  vm.runInNewContext(scripts, { document: { getElementById: (id) => elements[id], createElement: element,
+    addEventListener: jest.fn() }, window, fetch, AbortController, setTimeout, clearTimeout });
   await flush();
   const cards = Object.fromEntries(codes.map((code, index) => [code, elements['language-cards'].children[index].parts]));
   return { elements, state, fetch, window, cards, audio: elements['preview-audio'], map: window.ADMIN_POI_MAP };
@@ -128,6 +152,223 @@ test('Admin HTML nạp bản đồ trước handler và có đầy đủ điều
   }
   expect(html).toContain('/leaflet/leaflet.css');
   expect(mapScript).toContain('window.ADMIN_POI_MAP =');
+  const form = html.match(/<form id="poi-search-form"[\s\S]*?<\/form>/)?.[0];
+  expect(form).toContain('class="voucher-search-form poi-search-form"');
+  expect(['poi-search', 'poi-status-filter', 'poi-category-filter', 'poi-search-reset', 'poi-search-submit']
+    .map((id) => form.indexOf(`id="${id}"`))).toEqual([...['poi-search', 'poi-status-filter', 'poi-category-filter', 'poi-search-reset', 'poi-search-submit']
+    .map((id) => form.indexOf(`id="${id}"`))].sort((a, b) => a - b));
+});
+
+test('POI thống kê, lọc và phân trang 10 bản ghi mà vẫn giữ địa điểm đang chọn', async () => {
+  const pois = Array.from({ length: 12 }, (_, index) => ({ ...basePoi, id: `poi-${index}`, name: `Địa điểm ${index}`,
+    isActive: index % 2 === 0, createdAt: new Date(Date.UTC(2026, 0, index + 1)).toISOString(), narrations: {} }));
+  const ui = await setup({ pois });
+  expect(ui.elements['poi-stat-total'].textContent).toBe('12');
+  expect(ui.elements['poi-stat-active'].textContent).toBe('6');
+  expect(ui.elements['poi-stat-inactive'].textContent).toBe('6');
+  expect(ui.elements['poi-rows'].children).toHaveLength(10);
+  expect(ui.elements['poi-rows'].children[0].parts['.row-number'].textContent).toBe('1');
+  await select(ui);
+  const selected = ui.elements['selected-id'].textContent;
+  click(ui.elements['poi-next']);
+  expect(ui.elements['poi-rows'].children).toHaveLength(2);
+  expect(ui.elements['poi-page'].textContent).toContain('2/2');
+  ui.elements['poi-search'].value = 'không tồn tại';
+  expect(ui.elements['poi-rows'].children).toHaveLength(2);
+  submit(ui.elements['poi-search-form']);
+  expect(ui.elements['poi-rows'].children).toHaveLength(0);
+  expect(ui.elements['selected-id'].textContent).toBe(selected);
+  ui.elements['poi-search'].value = '';
+  ui.elements['poi-status-filter'].value = 'inactive';
+  submit(ui.elements['poi-search-form']);
+  expect(ui.elements['poi-rows'].children).toHaveLength(6);
+});
+
+test('Quản lý cuộn mượt đến đúng POI sau khi thông tin và thuyết minh đã tải', async () => {
+  const ui = await setup({ pois: [{ ...basePoi, name: 'Hủ Tiếu', narrations: {} },
+    { ...basePoi, id: 'poi-b', name: 'Phở', narrations: {} }] });
+  const scroll = ui.elements['poi-panel'].scrollIntoView;
+  expect(scroll).not.toHaveBeenCalled();
+  await select(ui, 0);
+  expect(ui.elements['poi-form-title'].textContent).toContain('Hủ Tiếu');
+  expect(ui.elements['content-panel'].hidden).toBe(false);
+  expect(scroll).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+  await select(ui, 1);
+  expect(ui.elements['poi-form-title'].textContent).toContain('Phở');
+  expect(scroll).toHaveBeenCalledTimes(2);
+});
+
+test('Quản lý chờ nội dung tải xong trước khi cuộn; tìm kiếm và Thêm địa điểm không cuộn sai', async () => {
+  const ui = await setup({ pois: [{ ...basePoi, name: 'Hủ Tiếu', narrations: {} }] });
+  const scroll = ui.elements['poi-panel'].scrollIntoView;
+  ui.elements['poi-search'].value = 'Hủ Tiếu';
+  submit(ui.elements['poi-search-form']);
+  expect(scroll).not.toHaveBeenCalled();
+  const delayed = pending();
+  ui.state.overrides.set('GET /api/pois/poi-a/narrations', delayed.promise);
+  click(ui.elements['poi-rows'].children[0].parts['.row-manage']);
+  await flush();
+  expect(ui.elements['poi-panel'].hidden).toBe(false);
+  expect(scroll).not.toHaveBeenCalled();
+  delayed.resolve(json({ poiId: 'poi-a', narrations: {} }));
+  await flush();
+  expect(scroll).toHaveBeenCalledTimes(1);
+  click(ui.elements['new-poi']);
+  expect(ui.elements['poi-form-title'].textContent).toContain('Thêm địa điểm');
+  expect(ui.elements['poi-name'].focus).toHaveBeenCalledWith({ preventScroll: true });
+  expect(scroll).toHaveBeenCalledTimes(2);
+});
+
+test('POI tìm theo tên hoặc địa chỉ, kết hợp trạng thái và danh mục rồi đặt lại', async () => {
+  const pois = [{ ...basePoi, id: 'poi-a', name: 'Quán Phở', address: 'Đường Lê Lợi', category: 'food', isActive: true },
+    { ...basePoi, id: 'poi-b', name: 'Quán Cà phê', address: 'Đường Lê Lợi', category: 'cafe', isActive: false },
+    { ...basePoi, id: 'poi-c', name: 'Cà phê Sông', address: 'Đường Nguyễn Huệ', category: 'cafe', isActive: true }];
+  const ui = await setup({ pois });
+  expect(ui.elements['poi-category-filter'].children.map((option) => option.value)).toEqual(['all', 'cafe', 'food']);
+  const requestCount = ui.fetch.mock.calls.length;
+  ui.elements['poi-search'].value = 'Quán Phở';
+  submit(ui.elements['poi-search-form']);
+  expect(ui.elements['poi-rows'].children).toHaveLength(1);
+  expect(ui.elements['poi-rows'].children[0].parts['.row-name'].textContent).toBe('Quán Phở');
+  ui.elements['poi-search'].value = 'cafe';
+  submit(ui.elements['poi-search-form']);
+  expect(ui.elements['poi-rows'].children).toHaveLength(0);
+  ui.elements['poi-search'].value = 'Lê Lợi';
+  ui.elements['poi-status-filter'].value = 'inactive';
+  ui.elements['poi-category-filter'].value = 'cafe';
+  expect(ui.elements['poi-rows'].children).toHaveLength(0);
+  submit(ui.elements['poi-search-form']);
+  expect(ui.elements['poi-rows'].children).toHaveLength(1);
+  expect(ui.elements['poi-rows'].children[0].parts['.row-name'].textContent).toBe('Quán Cà phê');
+  expect(ui.elements['poi-count'].textContent).toContain('1/3');
+  click(ui.elements['poi-search-reset']);
+  expect(ui.elements['poi-rows'].children).toHaveLength(3);
+  expect(ui.elements['poi-count'].textContent).toContain('3/3');
+  expect(ui.elements['poi-search'].value).toBe('');
+  expect(ui.elements['poi-status-filter'].value).toBe('all');
+  expect(ui.elements['poi-category-filter'].value).toBe('all');
+  expect(ui.fetch.mock.calls).toHaveLength(requestCount);
+});
+
+test('đổi bốn ngôn ngữ giữ bộ lọc POI đang áp dụng và danh mục thực tế', async () => {
+  const ui = await setup({ pois: [basePoi, { ...basePoi, id: 'poi-b', category: 'cafe', isActive: false }], withI18n: true });
+  ui.elements['poi-category-filter'].value = 'cafe';
+  submit(ui.elements['poi-search-form']);
+  const requestCount = ui.fetch.mock.calls.length;
+  for (const language of ['en', 'ja', 'ko', 'vi']) {
+    ui.window.ADMIN_I18N.setLanguage(language);
+    expect(ui.elements['poi-category-filter'].value).toBe('cafe');
+    expect(ui.elements['poi-category-filter'].children[0].textContent).toBe(ui.window.ADMIN_TRANSLATIONS[language]['html.admin.020']);
+    expect(ui.elements['poi-rows'].children).toHaveLength(1);
+    expect(ui.elements['poi-count'].textContent).toContain('1/2');
+  }
+  await flush();
+  expect(ui.fetch.mock.calls).toHaveLength(requestCount + 1);
+  expect(requests(ui, 'POST', '/api/pois/poi-a/details-translations')).toHaveLength(0);
+});
+
+test('danh sách và bản xem trước POI đổi ngôn ngữ; ô tiếng Việt gốc giữ nguyên', async () => {
+  const translated = { ...basePoi, category: 'Món ăn', translations: {
+    en: { name: 'Hu Tieu', description: 'Vietnamese noodles', address: '40 Tu Xuong Street', stale: {} },
+    ja: { name: 'フーティウ', description: 'ベトナム料理', address: '40 トゥースオン通り', stale: {} },
+    ko: { name: '후띠우', description: '베트남 음식', address: '40 투쓰엉 거리', stale: {} },
+  } };
+  const ui = await setup({ pois: [translated], withI18n: true });
+  await select(ui);
+  const originalName = ui.elements['poi-name'].value;
+  const requests = ui.fetch.mock.calls.length;
+  for (const [language, name] of [['en', 'Hu Tieu'], ['ja', 'フーティウ'], ['ko', '후띠우'], ['vi', basePoi.name]]) {
+    ui.window.ADMIN_I18N.setLanguage(language);
+    expect(ui.elements['poi-rows'].children[0].parts['.row-name'].textContent).toBe(name);
+    expect(ui.elements['selected-poi-summary'].textContent).toContain(name);
+    expect(ui.elements['selected-poi-summary'].textContent).toContain(translated.translations[language]?.description || basePoi.description);
+    expect(ui.elements['poi-name'].value).toBe(originalName);
+    expect(ui.elements['poi-rows'].children[0].parts['.row-category'].textContent)
+      .toBe(ui.window.ADMIN_TRANSLATIONS[language]['poi.category.food']);
+    expect(ui.elements['poi-category'].value).toBe('Món ăn');
+    if (language !== 'vi') expect(ui.elements['poi-category-display'].textContent)
+      .toBe(ui.window.ADMIN_TRANSLATIONS[language]['poi.category.food']);
+  }
+  expect(ui.fetch.mock.calls).toHaveLength(requests);
+});
+
+test('Admin quản lý POI không có thao tác dịch thông tin thủ công', async () => {
+  const ui = await setup({ withI18n: true });
+  await select(ui);
+  for (const id of ['poi-translation-panel', 'translate-poi-details', 'poi-translation-language',
+    'poi-translation-name', 'poi-translation-description', 'poi-translation-address', 'save-poi-translation']) {
+    expect(html).not.toContain(`id="${id}"`);
+  }
+  expect(requests(ui, 'POST', `/api/pois/${basePoi.id}/details-translations`)).toHaveLength(0);
+  expect(ui.state.pois[0].narrations.vi.text).toBe(texts.vi);
+  expect(ui.state.pois[0].name).toBe(basePoi.name);
+});
+
+test('đổi ngôn ngữ tải lại dữ liệu khi tab còn giữ phản hồi backend cũ', async () => {
+  const ui = await setup({ withI18n: true });
+  ui.state.pois[0].translations = { en: { name: 'Pho Viet Nam', description: 'Vietnamese pho',
+    address: 'Ho Chi Minh City' } };
+  ui.window.ADMIN_I18N.setLanguage('en');
+  await flush();
+  expect(ui.elements['poi-rows'].children[0].parts['.row-name'].textContent).toBe('Pho Viet Nam');
+  expect(ui.elements['poi-rows'].children[0].parts['.row-address'].textContent).toBe('Ho Chi Minh City');
+  expect(requests(ui, 'POST', `/api/pois/${basePoi.id}/details-translations`)).toHaveLength(0);
+});
+
+test('Admin tự cập nhật tên và địa chỉ POI mới sau khi worker dịch xong', async () => {
+  const ui = await setup({ withI18n: true });
+  ui.window.ADMIN_I18N.setLanguage('en');
+  expect(ui.elements['poi-rows'].children[0].parts['.row-name'].textContent).toBe(basePoi.name);
+  ui.state.pois[0].translations = { en: { name: 'Chicken rice', description: 'Tasty dish',
+    address: '252 Ho Hoc Lam Street', stale: {} } };
+  await jest.advanceTimersByTimeAsync(15000);
+  expect(ui.elements['poi-rows'].children[0].parts['.row-name'].textContent).toBe('Chicken rice');
+  expect(ui.elements['poi-rows'].children[0].parts['.row-address'].textContent).toBe('252 Ho Hoc Lam Street');
+});
+
+test('Admin nhận bản dịch hoàn tất sau khi lưu mà giữ form tiếng Việt', async () => {
+  const ui = await setup({ withI18n: true });
+  await select(ui);
+  fill(ui, { name: 'Hủ Tiếu' });
+  submit(ui.elements['poi-form']);
+  await flush();
+  ui.window.ADMIN_I18N.setLanguage('en');
+  ui.state.pois[0].translations = { en: { name: 'Hu Tieu', description: 'Vietnamese noodles',
+    address: '40 Tu Xuong Street' } };
+  await jest.advanceTimersByTimeAsync(15000);
+  expect(ui.elements['poi-rows'].children[0].parts['.row-name'].textContent).toBe('Hu Tieu');
+  expect(ui.elements['selected-poi-summary'].textContent).toContain('Vietnamese noodles');
+  expect(ui.elements['poi-name'].value).toBe('Hủ Tiếu');
+});
+
+test('tab ngôn ngữ chỉ hiển thị nội dung được chọn và cảnh báo bản nháp VI', async () => {
+  const ui = await setup({ pois: [{ ...basePoi, narrations: content(true) }] });
+  await select(ui);
+  click(ui.elements['language-tab-en']);
+  expect(ui.elements['vi-form'].hidden).toBe(true);
+  expect(ui.elements['language-cards'].children[1].hidden).toBe(false);
+  expect(ui.elements['language-cards'].children[0].hidden).toBe(true);
+  expect(ui.cards.en['.language-text'].textContent).toBe(texts.en);
+  expect(requests(ui, 'POST').length).toBe(0);
+  click(ui.elements['language-tab-vi']);
+  editVi(ui, 'Bản nháp chưa lưu');
+  ui.window.confirm.mockReturnValueOnce(false);
+  click(ui.elements['language-tab-ja']);
+  expect(ui.elements['vi-form'].hidden).toBe(false);
+  expect(ui.elements['vi-text'].value).toBe('Bản nháp chưa lưu');
+});
+
+test('chuyển POI khi có bản nháp VI cần xác nhận trước khi bỏ nội dung', async () => {
+  const ui = await setup({ pois: [{ ...basePoi, narrations: content() },
+    { ...basePoi, id: 'poi-b', name: 'Điểm B', narrations: content() }] });
+  await select(ui);
+  editVi(ui, 'Bản nháp cần giữ');
+  ui.window.confirm.mockReturnValueOnce(false);
+  await select(ui, 1);
+  expect(ui.elements['selected-id'].textContent).toContain('poi-a');
+  expect(ui.elements['vi-text'].value).toBe('Bản nháp cần giữ');
+  await select(ui, 1);
+  expect(ui.elements['selected-id'].textContent).toContain('poi-b');
 });
 
 test('nút thêm địa điểm xuất hiện một lần, ngay trên danh sách', () => {
@@ -234,7 +475,7 @@ describe('Stage 7: danh sách và CRUD POI', () => {
     click(ui.elements['new-poi']);
     expect(ui.elements['poi-panel'].hidden).toBe(false);
     expect(ui.elements['content-panel'].hidden).toBe(true);
-    expect(ui.elements['poi-category'].value).toBe('food');
+    expect(ui.elements['poi-category'].value).toBe('Món ăn');
     expect(ui.elements['poi-radius'].value).toBe('50');
     expect(ui.elements['poi-active'].checked).toBe(true);
   });
@@ -373,11 +614,14 @@ describe('Stage 7: danh sách và CRUD POI', () => {
   it('delete cancel không gọi API; confirm gọi DELETE 204 và clear POI đang chọn', async () => {
     const ui = await setup();
     await select(ui);
-    ui.window.confirm.mockReturnValueOnce(false);
     click(ui.elements['delete-selected']);
     expect(requests(ui, 'DELETE')).toEqual([]);
-    expect(ui.window.confirm).toHaveBeenCalledWith(expect.stringContaining(basePoi.name));
+    expect(ui.elements['poi-delete-modal'].hidden).toBe(false);
+    expect(ui.elements['poi-delete-description'].textContent).toContain(basePoi.name);
+    click(ui.elements['poi-delete-cancel']);
+    expect(ui.elements['poi-delete-modal'].hidden).toBe(true);
     click(ui.elements['delete-selected']);
+    click(ui.elements['poi-delete-confirm']);
     await flush();
     expect(requests(ui, 'DELETE', '/api/pois/poi-a')).toHaveLength(1);
     expect(requests(ui, 'DELETE', '/api/pois/poi-a')[0][1].headers).toMatchObject({ 'Content-Type': 'application/json', 'X-CSRF-Token': 'fixture' });
@@ -387,10 +631,37 @@ describe('Stage 7: danh sách và CRUD POI', () => {
     expect(ui.elements['action-status'].textContent).toContain('Đã xóa POI');
   });
 
+  it('modal xóa POI dịch đủ bốn ngôn ngữ và cập nhật khi đang mở', async () => {
+    const name = 'Phở Việt Nam <Bến Thành>';
+    const ui = await setup({ pois: [{ ...basePoi, name, narrations: content() }], withI18n: true });
+    const modal = ui.elements['poi-delete-modal'];
+    const description = ui.elements['poi-delete-description'];
+    const catalog = ui.window.ADMIN_TRANSLATIONS;
+    for (const language of ['vi', 'en', 'ja', 'ko']) {
+      ui.window.ADMIN_I18N.setLanguage(language);
+      if (modal.hidden) click(ui.elements['poi-rows'].children[0].parts['.row-delete']);
+      expect(description.textContent).toBe(`${catalog[language]['js.admin.096'].replace('{0}', name)} ${catalog[language]['js.admin.097']}`);
+      expect(description.textContent).toContain(name);
+      expect(requests(ui, 'DELETE')).toHaveLength(0);
+    }
+    ui.window.ADMIN_I18N.setLanguage('en');
+    ui.window.ADMIN_I18N.setLanguage('vi');
+    expect(description.textContent).toContain(catalog.vi['js.admin.097']);
+    click(ui.elements['poi-delete-cancel']);
+    expect(modal.hidden).toBe(true);
+    expect(requests(ui, 'DELETE')).toHaveLength(0);
+    click(ui.elements['poi-rows'].children[0].parts['.row-delete']);
+    click(ui.elements['poi-delete-confirm']);
+    await flush();
+    expect(requests(ui, 'DELETE', '/api/pois/poi-a')).toHaveLength(1);
+    expect(modal.hidden).toBe(true);
+  });
+
   it('xóa một POI khác không đóng panel đang chọn', async () => {
     const ui = await setup({ pois: [{ ...basePoi, narrations: content() }, { ...basePoi, id: 'poi-b', name: 'B' }] });
     await select(ui);
     click(ui.elements['poi-rows'].children[1].parts['.row-delete']);
+    click(ui.elements['poi-delete-confirm']);
     await flush();
     expect(ui.elements['poi-panel'].hidden).toBe(false);
     expect(ui.elements['selected-id'].textContent).toContain('poi-a');
@@ -418,7 +689,7 @@ describe('Stage 7: VI, translation và audio', () => {
     submit(ui.elements['vi-form']);
     await flush();
     expect(JSON.parse(requests(ui, 'PUT', '/api/pois/poi-a/narrations/vi')[0][1].body)).toEqual({ text: 'Nguồn VI mới.' });
-    expect(ui.cards.vi['.audio-status'].textContent).toBe('Chưa có audio');
+    expect(ui.cards.vi['.audio-status'].textContent).toBe('Chưa có audio thuyết minh');
     expect(ui.cards.vi['.listen-audio'].hidden).toBe(true);
     expect(ui.audio.getAttribute('src')).toBeNull();
     for (const code of ['en', 'ja', 'ko']) {
@@ -785,6 +1056,7 @@ describe('Stage 7: lỗi, loading và điều phối request', () => {
       if (action === 'audio') click(ui.elements['generate-all-audio']);
     };
     run(); run();
+    if (action === 'delete') click(ui.elements['poi-delete-confirm']);
     if (action === 'audio') await flush();
     const [method, url] = routes[action].split(' ');
     expect(requests(ui, method, url)).toHaveLength(1);

@@ -1,4 +1,5 @@
 const poiService = require('../services/poi.service');
+const poiTranslationService = require('../services/poi-translation.service');
 const publicPoi = (poi) => {
   if (!poi) return poi;
   const result = { ...poi };
@@ -20,8 +21,7 @@ class PoiController {
   async getPois(req, res, next) {
     try {
       const pois = await poiService.getPois();
-
-      res.status(200).json(pois.map(publicPoi));
+      res.status(200).json((await poiTranslationService.list(pois, req.query.lang, false, true)).map(publicPoi));
     } catch (error) {
       next(error);
     }
@@ -32,7 +32,9 @@ class PoiController {
       const { lat, lng } = req.query;
       const result = await poiService.getNearbyPois({ lat, lng });
 
-      res.status(200).json({ ...result, pois: result.pois.map(publicPoi), nearestPoi: publicPoi(result.nearestPoi) });
+      const localized = await poiTranslationService.list(result.pois, req.query.lang);
+      res.status(200).json({ ...result, pois: localized.map(publicPoi),
+        nearestPoi: publicPoi(localized.find((poi) => poi.id === result.nearestPoi?.id) || null) });
     } catch (error) {
       next(error);
     }
@@ -86,18 +88,32 @@ class PoiController {
     try {
       const poi = await poiService.getPoi(req.params.id);
 
-      res.status(200).json(publicPoi(poi));
+      res.status(200).json(publicPoi((await poiTranslationService.list([poi], req.query.lang))[0]));
     } catch (error) {
       next(error);
     }
   }
 
   async getAdminPois(req, res, next) {
-    try { res.json(await poiService.getPois()); } catch (error) { next(error); }
+    try { res.json(await poiTranslationService.list(await poiService.getPois(), 'vi', true)); } catch (error) { next(error); }
   }
 
   async getAdminPoi(req, res, next) {
-    try { res.json(await poiService.getPoi(req.params.id)); } catch (error) { next(error); }
+    try { res.json((await poiTranslationService.list([await poiService.getPoi(req.params.id)], 'vi', true))[0]); }
+    catch (error) { next(error); }
+  }
+
+  async getPoiTranslations(req, res, next) {
+    try { res.json(await poiTranslationService.details(req.params.id)); } catch (error) { next(error); }
+  }
+
+  async translatePoiDetails(req, res, next) {
+    try { res.json(await poiTranslationService.translate(req.params.id, req.body)); } catch (error) { next(error); }
+  }
+
+  async savePoiTranslation(req, res, next) {
+    try { res.json(await poiTranslationService.save(req.params.id, req.params.language, req.body)); }
+    catch (error) { next(error); }
   }
 
   async updatePoi(req, res, next) {

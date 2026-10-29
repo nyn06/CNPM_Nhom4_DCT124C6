@@ -252,3 +252,12 @@ it('valid startup bootstraps before listen and drops the bootstrap password from
     expect(session.response.status).toBe(200);
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
+
+it('reports the listen stage when the port is already occupied', async () => {
+  const first = await start({ PORT: 0 });
+  try {
+    await expect(start({ PORT: first.address().port })).rejects.toMatchObject({
+      code: 'EADDRINUSE', startupStage: 'http_listen',
+    });
+  } finally { await new Promise((resolve) => first.close(resolve)); }
+});

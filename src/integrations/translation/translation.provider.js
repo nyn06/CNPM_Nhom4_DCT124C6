@@ -61,6 +61,7 @@ class TranslationProvider {
     } catch (error) {
       if (controller.signal.aborted) throw providerError('API dịch quá thời gian chờ.', 504);
       if (error?.statusCode === 503) throw providerError('API dịch từ chối xác thực. Kiểm tra cấu hình API key.', 503);
+      if (error instanceof TypeError) throw providerError('Không kết nối được dịch vụ dịch.', 503);
       throw providerError('Không nhận được bản dịch hợp lệ từ API dịch.', 502);
     } finally {
       clearTimeout(timer);

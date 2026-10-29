@@ -167,6 +167,62 @@
 
     <section id="poi-section" class="poi-section" aria-labelledby="poi-title">
       <div class="poi-section-heading"><div><div class="eyebrow" data-i18n="poiSection">ĐIỂM ĐẾN ẨM THỰC</div><h2 id="poi-title" data-i18n="poiTitle">Một điểm dừng, một khám phá.</h2><p id="poi-count" class="helper">Đang tải danh sách địa điểm…</p></div><button id="reload-pois" class="button secondary" type="button"><svg class="icon"><use href="#icon-refresh"/></svg><span data-i18n="reloadPois">Tải lại danh sách</span></button></div>
+      <form id="poi-search-form" class="poi-search-form">
+        <div class="poi-search-field">
+          <label for="poi-search-keyword" data-i18n="searchKeyword">
+            Tên hoặc địa chỉ
+          </label>
+          <input
+            id="poi-search-keyword"
+            type="text"
+            placeholder="Nhập tên địa điểm hoặc địa chỉ..."
+            data-i18n-placeholder="searchPlaceholder"
+            autocomplete="off"
+          >
+        </div>
+
+        <div class="poi-search-field">
+          <label for="poi-search-status" data-i18n="searchStatus">
+            Trạng thái
+          </label>
+          <select id="poi-search-status">
+            <option value="all" data-i18n="searchAll">
+              Tất cả
+            </option>
+            <option value="active" data-i18n="active">
+              Đang hoạt động
+            </option>
+            <option value="inactive" data-i18n="inactive">
+              Tạm dừng
+            </option>
+          </select>
+        </div>
+
+        <div class="poi-search-field">
+          <label for="poi-search-distance" data-i18n="searchDistance">
+            Khoảng cách
+          </label>
+          <select id="poi-search-distance">
+            <option value="all" data-i18n="searchAll">
+              Tất cả
+            </option>
+            <option value="500" data-i18n="searchUnder500">Dưới 500 m</option>
+            <option value="1000" data-i18n="searchUnder1">Dưới 1 km</option>
+            <option value="3000" data-i18n="searchUnder3">Dưới 3 km</option>
+            <option value="5000" data-i18n="searchUnder5">Dưới 5 km</option>
+          </select>
+        </div>
+
+        <button id="poi-search-reset" class="button secondary" type="button">
+          <span data-i18n="resetButton">Đặt lại</span>
+        </button>
+
+        <button id="poi-search-button" class="button primary" type="submit">
+          <span data-i18n="searchButton">Tìm kiếm</span>
+        </button>
+      </form>
+
+      <p id="poi-search-result" class="helper" role="status" hidden></p>
       <p id="poi-message" class="notice" role="status" aria-live="polite">Đang tải danh sách POI…</p>
       <div id="poi-list" class="poi-grid" aria-busy="true"></div>
     </section>

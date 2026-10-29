@@ -109,7 +109,7 @@ describe('GET /api/pois/nearby: geofence', () => {
     const list = await request(app).get('/api/pois');
     expect(fetched.statusCode).toBe(200);
     expect(fetched.body).toEqual(poi);
-    expect(list.body).toEqual([poi]);
+    expect(list.body).toMatchObject([poi]);
     expect(poiRepository.findById(poi.id)).not.toHaveProperty('distance');
     expect(poiRepository.findById(poi.id)).not.toHaveProperty('insideGeofence');
   });

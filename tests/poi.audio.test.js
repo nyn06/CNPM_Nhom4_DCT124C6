@@ -5,8 +5,6 @@ const request = require('./helpers/auth-request');
 const app = require('../src/app');
 const poiService = require('../src/services/poi.service');
 const poiRepository = require('../src/repositories/poi.repository');
-const narrationService = require('../src/services/narration.service');
-const narrationRepository = require('../src/repositories/narration.repository');
 const piper = require('../src/integrations/tts/piperTts.provider');
 const translator = require('../src/integrations/translation/translation.provider');
 
@@ -17,7 +15,6 @@ const createAudio = (language) => request(app).post(`${base()}/${language}/audio
 
 beforeEach(async () => {
   poiRepository.clear();
-  narrationRepository.clear();
   piper.synthesize.mockReset().mockImplementation(async (text, language) => `narration_${language}_test.wav`);
   translator.translate.mockReset().mockImplementation(async (text, source, target) => ({ text: texts[target] }));
   poi = poiService.createPoi({ name: 'Phở Việt Nam', description: 'Mô tả ngắn', latitude: 10, longitude: 106, geofenceRadius: 50 });
@@ -25,7 +22,6 @@ beforeEach(async () => {
   await poiService.createTranslations(poi.id, { targetLanguages: ['en', 'ja', 'ko'] });
   translator.translate.mockClear();
 });
-
 describe('Stage 5: POI audio', () => {
   it.each(['vi', 'en', 'ja', 'ko'])('tạo WAV %s từ text đã lưu, đúng metadata và timestamp', async (language) => {
     const before = JSON.parse(JSON.stringify(poiRepository.findById(poi.id)));
@@ -223,30 +219,5 @@ describe('Stage 5: POI audio', () => {
     await request(app).get('/').expect(200).expect(/narration-audio/);
     await request(app).get(`/api/pois/${poi.id}`).expect(200);
     await request(app).delete(`/api/pois/${poi.id}`).expect(204);
-  });
-});
-
-describe('Stage 5: legacy narration', () => {
-  it.each(['vi', 'en', 'ja', 'ko'])('POST/GET legacy %s vẫn dùng Piper và giữ response cũ', async (language) => {
-    const res = await request(app).post('/api/narrations').send({ text: texts[language], language });
-    expect(res.status).toBe(201);
-    expect(res.body).toMatchObject({ text: texts[language], language, status: 'done', audioFile: `narration_${language}_test.wav` });
-    expect(piper.synthesize).toHaveBeenCalledWith(texts[language], language);
-    const get = await request(app).get(`/api/narrations/${res.body.id}`);
-    expect(get.body).toEqual(res.body);
-    const all = await request(app).get('/api/narrations');
-    expect(all.body).toEqual([res.body]);
-  });
-
-  it('legacy supported languages cùng nguồn VI/EN/JA/KO', () => {
-    expect(narrationService.getSupportedLanguages()).toEqual(['vi', 'en', 'ja', 'ko']);
-  });
-
-  it('legacy Piper failure giữ status failed, không expose path', async () => {
-    piper.synthesize.mockRejectedValue(new Error('SECRET D:\\private\\piper.exe'));
-    const res = await request(app).post('/api/narrations').send({ text: texts.ja, language: 'ja' });
-    expect(res.status).toBe(500);
-    expect(JSON.stringify(res.body)).not.toContain('SECRET');
-    expect(narrationRepository.findAll()).toEqual([expect.objectContaining({ text: texts.ja, status: 'failed', audioFile: null })]);
   });
 });

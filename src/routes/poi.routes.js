@@ -18,6 +18,9 @@ router.get('/pois/:id/narrations', narrationAccess, poiController.getPoiNarratio
 router.get('/pois/:id/narrations/:language', narrationAccess, poiController.getPoiNarration);
 router.post('/pois/:id/narrations/:language/audio', ...manage, poiController.createPoiAudio);
 router.post('/pois/:id/translations', ...manage, poiController.createTranslations);
+router.get('/admin/pois/:id/details-translations', ...manage, poiController.getPoiTranslations);
+router.post('/pois/:id/details-translations', ...manage, poiController.translatePoiDetails);
+router.put('/pois/:id/details-translations/:language', ...manage, poiController.savePoiTranslation);
 router.get('/pois/:id', poiController.getPoi);
 router.put('/pois/:id', ...manage, poiController.updatePoi);
 router.delete('/pois/:id', ...manage, poiController.deletePoi);

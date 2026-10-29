@@ -1,5 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const poiRepository = require('../repositories/poi.repository');
+const translationJobs = require('../repositories/poi-translation-job.repository');
 const { calculateDistanceInMeters } = require('../utils/geo');
 const translationProvider = require('../integrations/translation/translation.provider');
 const piperTtsProvider = require('../integrations/tts/piperTts.provider');
@@ -13,12 +14,14 @@ class PoiService {
     const fields = this._preparePoi({ ...data, category, address, isActive });
     const now = new Date().toISOString();
 
-    return poiRepository.create({
+    const poi = poiRepository.create({
       id: uuidv4(),
       ...fields,
       createdAt: now,
       updatedAt: now,
     });
+    translationJobs.enqueue(poi.id);
+    return poi;
   }
 
   getPois() {
@@ -73,10 +76,14 @@ class PoiService {
     // Giữ các trường không được gửi; chỉ lưu những trường được phép sửa.
     const fields = this._preparePoi({ ...existing, ...data });
 
-    return poiRepository.update(id, {
+    const poi = poiRepository.update(id, {
       ...fields,
       updatedAt: new Date().toISOString(),
     });
+    if (['name', 'description', 'address'].some((field) => fields[field] !== existing[field])) {
+      translationJobs.enqueue(id);
+    }
+    return poi;
   }
 
   deletePoi(id) {

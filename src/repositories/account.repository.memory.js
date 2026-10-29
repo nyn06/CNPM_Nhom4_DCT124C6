@@ -16,9 +16,10 @@ class AccountRepository {
 
   // Check and update without await: concurrent demotions/locks cannot remove
   // the last active ADMIN. Replace with a DB transaction in Stage 10.
-  update(id, patch) {
+  update(id, patch, expectedVersion) {
     const current = accounts.get(id);
     if (!current) throw error('Không tìm thấy tài khoản.', 404);
+    if (expectedVersion !== undefined && current.version !== expectedVersion) throw error('Tài khoản đã thay đổi. Hãy thử lại.', 409);
     const updated = { ...current, ...patch, version: current.version + 1 };
     if (current.role === 'ADMIN' && !current.isLocked && (updated.role !== 'ADMIN' || updated.isLocked)
       && this.findAll().filter((account) => account.role === 'ADMIN' && !account.isLocked).length <= 1) {

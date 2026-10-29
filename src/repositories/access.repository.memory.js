@@ -36,6 +36,21 @@ class AccessRepository {
     return session ? { ...session } : null;
   }
 
+  findRecentDashboardSessions(now) {
+    return Array.from(sessions.values(), (session) => ({
+      id: session.id, voucherId: session.voucherId, durationMinutes: session.durationMinutes,
+      startedAt: session.startedAt, expiresAt: session.expiresAt,
+      status: session.revokedAt || session.expiresAt <= now ? 'expired' : 'active',
+    })).sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id)).slice(0, 5);
+  }
+
+  findAllDashboardSessions() {
+    return Array.from(sessions.values(), (session) => ({
+      id: session.id, voucherId: session.voucherId, durationMinutes: session.durationMinutes,
+      startedAt: session.startedAt, expiresAt: session.expiresAt, revokedAt: session.revokedAt,
+    }));
+  }
+
   clear() {
     vouchers.clear();
     shortCodes.clear();

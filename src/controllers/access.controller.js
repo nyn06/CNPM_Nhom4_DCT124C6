@@ -1,5 +1,6 @@
 const QRCode = require('qrcode');
 const accessService = require('../services/access.service');
+const managementService = require('../services/voucher-management.service');
 
 class AccessController {
   async createVoucher(req, res, next) {
@@ -15,6 +16,14 @@ class AccessController {
 
   async listVouchers(req, res, next) {
     try { res.json(await accessService.listVouchers()); } catch (error) { next(error); }
+  }
+
+  async voucherOverview(req, res, next) {
+    try { res.json(await managementService.vouchers(req.query)); } catch (error) { next(error); }
+  }
+
+  async activationHistory(req, res, next) {
+    try { res.json(await managementService.activations(req.query)); } catch (error) { next(error); }
   }
 
   async redeem(req, res, next) {

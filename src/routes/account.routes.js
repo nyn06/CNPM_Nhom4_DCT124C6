@@ -6,6 +6,7 @@ const router = express.Router();
 router.use('/accounts', requireAdmin, requireRoles('ADMIN'), csrf());
 router.get('/accounts', controller.list);
 router.post('/accounts', controller.create);
+router.post('/accounts/me/password', controller.changeOwnPassword);
 router.patch('/accounts/:id', controller.update);
 router.post('/accounts/:id/password', controller.resetPassword);
 module.exports = router;

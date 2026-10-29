@@ -62,6 +62,55 @@ beforeEach(() => { jest.useFakeTimers(); });
 afterEach(() => { jest.useRealTimers(); });
 
 describe('Frontend: GPS và request', () => {
+  it('nhận bản dịch POI khi worker hoàn tất mà không tải lại trang', async () => {
+    const { elements, fetch } = await setup();
+    const cards = [];
+    elements['poi-template'].content = { firstElementChild: { cloneNode: () => {
+      const parts = {};
+      const card = { dataset: {}, querySelector: (selector) => (parts[selector] ||= createElement()) };
+      cards.push(parts);
+      return card;
+    } } };
+    elements['poi-list'].append = jest.fn();
+    const poi = { id: 'poi-new', name: 'Cơm gà', description: 'Món ngon', address: '252 Đường Hồ Học Lãm',
+      category: 'Món ăn', latitude: 10, longitude: 106, isActive: true, translationPending: true,
+      translations: { en: { name: 'Cơm gà', description: 'Món ngon', address: '252 Đường Hồ Học Lãm' } } };
+    fetch.mockResolvedValueOnce(jsonResponse([poi]));
+    elements['reload-pois'].events.click();
+    await jest.advanceTimersByTimeAsync(0);
+    elements.language.value = 'en';
+    elements.language.events.change();
+    expect(cards.at(-1)['.poi-name'].textContent).toBe('Cơm gà');
+    fetch.mockResolvedValueOnce(jsonResponse([{ ...poi, translationPending: false,
+      translations: { en: { name: 'Chicken rice', description: 'Tasty dish', address: '252 Ho Hoc Lam Street' } } }]));
+    await jest.advanceTimersByTimeAsync(15000);
+    expect(cards.at(-1)['.poi-name'].textContent).toBe('Chicken rice');
+    expect(cards.at(-1)['.poi-address'].textContent).toBe('252 Ho Hoc Lam Street');
+  });
+
+  it('đổi bản dịch POI đã tải ngay, không gọi dịch vụ hoặc tải lại danh sách', async () => {
+    const { elements, fetch } = await setup();
+    const cards = [];
+    elements['poi-template'].content = { firstElementChild: { cloneNode: () => {
+      const parts = {};
+      const card = { dataset: {}, querySelector: (selector) => (parts[selector] ||= createElement()) };
+      cards.push({ card, parts });
+      return card;
+    } } };
+    elements['poi-list'].append = jest.fn();
+    fetch.mockResolvedValueOnce(jsonResponse([{ id: 'poi-a', name: 'Hủ Tiếu', description: 'Món Việt',
+      address: '40 Tú Xương', category: 'Món ăn', latitude: 10, longitude: 106, isActive: true,
+      translations: { en: { name: 'Hu Tieu', description: 'Vietnamese noodles', address: '40 Tu Xuong Street' } } }]));
+    elements['reload-pois'].events.click();
+    await jest.advanceTimersByTimeAsync(0);
+    const requestCount = fetch.mock.calls.length;
+    elements.language.value = 'en';
+    elements.language.events.change();
+    expect(cards.at(-1).parts['.poi-name'].textContent).toBe('Hu Tieu');
+    expect(cards.at(-1).parts['.poi-address'].textContent).toBe('40 Tu Xuong Street');
+    expect(cards.at(-1).parts['.poi-category'].textContent).toBe('Food');
+    expect(fetch).toHaveBeenCalledTimes(requestCount);
+  });
   it('cập nhật khoảng cách và thứ tự theo GPS thật, giữ thứ tự gốc khi dừng', async () => {
     const { elements, fetch, geolocation } = await setup();
     const cards = [];

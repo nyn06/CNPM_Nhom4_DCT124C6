@@ -2,29 +2,31 @@
 <html lang="vi">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Đăng nhập quản trị — Vị Giác</title>
+  <title data-admin-i18n="html.login.002">Đăng nhập quản trị — Vị Giác</title>
   <link rel="icon" href="data:,"><link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/admin.css">
-  <script src="/js/admin-login.js" defer></script>
+  <script src="/js/admin-translations.js" defer></script><script src="/js/admin-i18n.js" defer></script><script src="/js/admin-login.js" defer></script>
 </head>
 <body>
   <main class="page login-page">
     <section class="panel admin-panel" aria-labelledby="login-title">
-      <p class="eyebrow">VỊ GIÁC · QUẢN TRỊ</p><h1 id="login-title">Đăng nhập quản trị</h1>
-      <form id="login-form">
-        <label for="login-username">Tên đăng nhập</label><input id="login-username" name="username" autocomplete="username" maxlength="64" required>
-        <label for="login-password">Mật khẩu</label>
+      <label class="admin-language-control login-language-control" for="admin-language"><span aria-hidden="true">🌐</span><span class="sr-only" data-admin-i18n="html.admin.154">Ngôn ngữ giao diện</span><select id="admin-language" aria-label="Ngôn ngữ giao diện" data-admin-i18n-aria-label="html.admin.154"><option value="vi">🇻🇳 Tiếng Việt</option><option value="en">🇺🇸 English</option><option value="ja">🇯🇵 日本語</option><option value="ko">🇰🇷 한국어</option></select></label>
+      <p class="eyebrow" data-admin-i18n="html.login.003">VỊ GIÁC · QUẢN TRỊ</p><h1 id="login-title" data-admin-i18n="html.login.004">Đăng nhập quản trị</h1>
+      <form id="login-form" novalidate>
+        <label for="login-username" data-admin-i18n="html.login.005">Tên đăng nhập</label><input id="login-username" name="username" autocomplete="username" maxlength="64" required aria-describedby="login-username-error"><p id="login-username-error" class="admin-field-error" role="status" hidden></p>
+        <label for="login-password" data-admin-i18n="html.login.006">Mật khẩu</label>
         <div class="login-password-field">
-          <input id="login-password" name="password" type="password" autocomplete="current-password" required>
-          <button id="toggle-login-password" class="password-toggle" type="button" aria-label="Hiện mật khẩu" aria-pressed="false" aria-controls="login-password" title="Hiện mật khẩu">
+          <input id="login-password" name="password" type="password" autocomplete="current-password" required aria-describedby="login-password-error">
+          <button id="toggle-login-password" class="password-toggle" type="button" aria-label="Hiện mật khẩu" aria-pressed="false" aria-controls="login-password" title="Hiện mật khẩu" data-admin-i18n-title="html.login.001" data-admin-i18n-aria-label="html.login.001">
             <svg class="password-eye password-eye-open" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
             <svg class="password-eye password-eye-off" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m3 3 18 18M10.6 5.1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3.1 4M6.2 6.2A21 21 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5.8-1.8M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
           </button>
         </div>
-        <button id="login-submit" class="button primary" type="submit" disabled>Đăng nhập</button>
+        <p id="login-password-error" class="admin-field-error" role="status" hidden></p>
+        <button id="login-submit" class="button primary" type="submit" disabled data-admin-i18n="html.login.007">Đăng nhập</button>
       </form>
-      <p id="login-status" class="helper" role="status">Đang chuẩn bị phiên đăng nhập…</p>
-      <button id="login-retry" class="button secondary" type="button" hidden>Thử kết nối lại</button>
-      <p class="helper"><a href="/">Mở trang tham quan dành cho khách</a></p>
+      <p id="login-status" class="helper" role="status" data-admin-i18n="html.login.008">Đang chuẩn bị phiên đăng nhập…</p>
+      <button id="login-retry" class="button secondary" type="button" hidden data-admin-i18n="html.login.009">Thử kết nối lại</button>
+      <p class="helper"><a href="/" data-admin-i18n="html.login.010">Mở trang tham quan dành cho khách</a></p>
     </section>
   </main>
 </body>
