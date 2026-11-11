@@ -26,9 +26,9 @@ class SqlAccessRepository {
     try {
       const voucher = mapVoucher((await request(tx, { codeHash }).query(
         'SELECT * FROM dbo.Vouchers WITH (UPDLOCK, HOLDLOCK) WHERE CodeHash=@codeHash OR ShortCodeHash=@codeHash')).recordset[0]);
-      if (!voucher || voucher.status !== 'unused') {
+      if (!voucher || voucher.status !== 'unused' || voucher.durationMinutes === null) {
         await tx.rollback();
-        return { failure: voucher ? 'used' : 'invalid' };
+        return { failure: !voucher ? 'invalid' : voucher.status !== 'unused' ? 'used' : 'payment' };
       }
       const { session, accessToken } = createSession(voucher);
       await request(tx, session).query(`INSERT dbo.GuestSessions

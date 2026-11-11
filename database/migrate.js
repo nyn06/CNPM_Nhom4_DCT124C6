@@ -3,6 +3,7 @@ const path = require('path');
 require('dotenv').config();
 const { sql } = require('../src/database/connection');
 const { databaseConfig } = require('../src/config/database');
+const { formatMigrationError } = require('./migration-error');
 
 async function migrate() {
   const config = databaseConfig();
@@ -24,23 +25,33 @@ async function migrate() {
     const files = (await fs.readdir(dir)).filter((name) => /^\d+_[a-z0-9_-]+\.sql$/.test(name)).sort();
     for (const name of files) {
       const tx = new sql.Transaction(pool);
-      await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
+      let migrationStage = 'begin';
       try {
+        await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
+        migrationStage = 'check_version';
         const found = await new sql.Request(tx).input('version', sql.VarChar(100), name)
           .query('SELECT Version FROM dbo.SchemaMigrations WITH (UPDLOCK, HOLDLOCK) WHERE Version = @version');
         if (!found.recordset.length) {
+          migrationStage = 'apply_batch';
           await new sql.Request(tx).batch(await fs.readFile(path.join(dir, name), 'utf8'));
+          migrationStage = 'record_version';
           await new sql.Request(tx).input('version', sql.VarChar(100), name)
             .query('INSERT dbo.SchemaMigrations (Version) VALUES (@version)');
           process.stdout.write(`Applied ${name}\n`);
         }
+        migrationStage = 'commit';
         await tx.commit();
-      } catch (error) { await tx.rollback(); throw error; }
+      } catch (error) {
+        try { await tx.rollback(); } catch (rollbackError) { error.rollbackError = rollbackError; }
+        error.migrationName = name;
+        error.migrationStage = migrationStage;
+        throw error;
+      }
     }
   } finally { await pool.close(); }
 }
-if (require.main === module) migrate().catch(() => {
-  console.error('Migration failed. Check SQL Server readiness, configuration, and schema state.');
+if (require.main === module) migrate().catch((error) => {
+  console.error(formatMigrationError(error));
   process.exitCode = 1;
 });
 module.exports = { migrate };

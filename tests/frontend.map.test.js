@@ -85,6 +85,28 @@ it('đổi ngôn ngữ cập nhật trạng thái và popup trên cùng bản đ
   expect(ui.L.map).toHaveBeenCalledTimes(1);
 });
 
+it('popup báo rõ mô tả tiếng Việt fallback rồi cập nhật khi đổi ngôn ngữ', () => {
+  const ui = setup();
+  ui.api.init();
+  ui.api.setPois([{ ...poi, name: 'Kiem tra', translationStatus: {
+    en: { description: 'rejected' }, ko: { description: 'ready' } } }]);
+  ui.elements.language.value = 'en';
+  ui.api.refreshLanguage();
+  expect(ui.layers.markers[0].popup.children[1].textContent).toContain('showing Vietnamese');
+  ui.api.setPois([{ ...poi, name: 'Kiem tra', description: 'Translated description',
+    translationStatus: { en: { description: 'unverified' } },
+    translationFallback: { en: false } }]);
+  ui.api.refreshLanguage();
+  expect(ui.layers.markers.at(-1).popup.children[1].textContent).toContain('Translated description');
+  expect(ui.layers.markers.at(-1).popup.children[1].textContent).toContain('not been fully verified');
+  expect(ui.layers.markers.at(-1).popup.children[1].textContent).not.toContain('showing Vietnamese');
+  ui.api.setPois([{ ...poi, name: 'Kiem tra', description: '정상 보고',
+    translationStatus: { ko: { description: 'ready' } } }]);
+  ui.elements.language.value = 'ko';
+  ui.api.refreshLanguage();
+  expect(ui.layers.markers.at(-1).popup.children[1].textContent).toBe('정상 보고');
+});
+
 it('chỉ vẽ POI hoạt động, marker và vòng tròn theo bán kính; popup không chứa nội dung bảo vệ', () => {
   const ui = setup();
   ui.api.init();

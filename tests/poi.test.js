@@ -35,6 +35,9 @@ const invalidFields = [
   ['longitude', false],
   ['geofenceRadius', 0],
   ['geofenceRadius', -1],
+  ['geofenceRadius', 0.5],
+  ['geofenceRadius', 1.5],
+  ['geofenceRadius', 9007199254740992],
   ['geofenceRadius', '50'],
   ['geofenceRadius', null],
   ['category', '   '],
@@ -143,11 +146,11 @@ describe('POST /api/pois', () => {
         ...validPoi,
         latitude,
         longitude,
-        geofenceRadius: 0.5,
+        geofenceRadius: 1,
       });
 
       expect(res.statusCode).toBe(201);
-      expect(res.body).toMatchObject({ latitude, longitude, geofenceRadius: 0.5 });
+      expect(res.body).toMatchObject({ latitude, longitude, geofenceRadius: 1 });
     }
   );
 

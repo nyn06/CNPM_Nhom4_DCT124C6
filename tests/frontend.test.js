@@ -111,6 +111,59 @@ describe('Frontend: GPS và request', () => {
     expect(cards.at(-1).parts['.poi-category'].textContent).toBe('Food');
     expect(fetch).toHaveBeenCalledTimes(requestCount);
   });
+
+  it('phản hồi nearby tiếng Anh đến muộn không ghi đè ngôn ngữ mới', async () => {
+    const { elements, fetch } = await setup();
+    let finishEnglish;
+    fetch.mockReturnValueOnce(new Promise((resolve) => { finishEnglish = resolve; }));
+    elements.language.value = 'en';
+    elements.language.events.change();
+    submit(elements, '10', '106');
+    const oldSignal = fetch.mock.calls.at(-1)[1].signal;
+    elements.language.value = 'ja';
+    elements.language.events.change();
+    expect(oldSignal.aborted).toBe(true);
+    finishEnglish(jsonResponse({ insideGeofence: true, pois: [{ id: 'p1' }],
+      nearestPoi: { id: 'p1', name: 'English name', description: 'English description', distance: 0 } }));
+    await jest.advanceTimersByTimeAsync(0);
+    expect(elements['nearest-name'].textContent).not.toContain('English name');
+    expect(elements['nearest-description'].textContent).not.toBe('English description');
+  });
+  it('Arrived giải thích fallback mô tả và đổi ngôn ngữ ngay khi POI đã tải', async () => {
+    const { elements, fetch } = await setup();
+    const poi = { id: 'poi-a', name: 'Kiểm tra', description: 'Nay báo cáo ổn nha',
+      address: '40 Tú Xương', category: 'food', latitude: 10, longitude: 106,
+      geofenceRadius: 50, isActive: true, translationPending: true,
+      translationStatus: { en: { description: 'rejected' }, ja: { description: 'unverified' },
+        ko: { description: 'ready' } },
+      translationFallback: { en: true, ja: false, ko: false },
+      translations: { en: { name: 'Kiem tra', description: 'Nay báo cáo ổn nha', address: '40 Tu Xuong' },
+        ja: { name: 'Kiem tra', description: '翻訳された説明', address: '40 Tu Xuong' },
+        ko: { name: 'Kiem tra', description: '정상 보고', address: '40 Tu Xuong' } } };
+    elements['poi-template'].content = { firstElementChild: { cloneNode: () => ({
+      dataset: {}, querySelector: () => createElement()
+    }) } };
+    elements['poi-list'].append = jest.fn();
+    fetch.mockResolvedValueOnce(jsonResponse([poi]));
+    elements['reload-pois'].events.click();
+    await jest.advanceTimersByTimeAsync(0);
+    fetch.mockResolvedValueOnce(jsonResponse({ insideGeofence: true, pois: [poi],
+      nearestPoi: { ...poi, distance: 0 } }));
+    submit(elements, '10', '106');
+    await jest.advanceTimersByTimeAsync(0);
+    elements.language.value = 'en';
+    elements.language.events.change();
+    expect(elements['nearest-name'].textContent).toContain('Kiem tra');
+    expect(elements['nearest-description'].textContent).toContain('quality checks');
+    elements.language.value = 'ja';
+    elements.language.events.change();
+    expect(elements['nearest-description'].textContent).toContain('翻訳された説明');
+    expect(elements['nearest-description'].textContent).toContain('十分に確認');
+    expect(elements['nearest-description'].textContent).not.toContain('ベトナム語を表示');
+    elements.language.value = 'ko';
+    elements.language.events.change();
+    expect(elements['nearest-description'].textContent).toBe('정상 보고');
+  });
   it('cập nhật khoảng cách và thứ tự theo GPS thật, giữ thứ tự gốc khi dừng', async () => {
     const { elements, fetch, geolocation } = await setup();
     const cards = [];

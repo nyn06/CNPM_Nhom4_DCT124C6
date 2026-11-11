@@ -14,6 +14,8 @@ const element = () => ({
 });
 async function setup() {
   const elements = Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => [match[1], element()]));
+  // Legacy voucher widget is tested independently; the current Admin form no longer mounts this selector.
+  elements['voucher-duration'] = element();
   elements['voucher-duration'].value = '60';
   elements['voucher-result'].hidden = true;
   const voucher = { id: 'voucher-id', code, activationCode: 'aB7kP2x', durationMinutes: 60, status: 'unused', activationUrl: `http://localhost:3000/?voucher=${code}`, mobileReady: false };

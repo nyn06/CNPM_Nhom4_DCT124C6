@@ -1,5 +1,9 @@
 const jobs = new Map();
 class Repository {
+  findByPoiIds(ids) {
+    return ids.map((id) => jobs.get(id)).filter(Boolean).map((job) => ({ ...job }));
+  }
+
   enqueue(id, reconcile = false) {
     const current = jobs.get(id);
     if (reconcile && current && current.status !== 'done') return;
@@ -9,7 +13,7 @@ class Repository {
 
   claim() {
     const now = Date.now();
-    const job = [...jobs.values()].find((entry) => (['pending', 'failed'].includes(entry.status) && entry.nextAttemptAt <= now)
+    const job = [...jobs.values()].find((entry) => (entry.status === 'pending' && entry.nextAttemptAt <= now)
       || (entry.status === 'processing' && entry.leaseUntil <= now));
     if (!job) return null;
     job.status = 'processing';
@@ -29,9 +33,11 @@ class Repository {
   fail(job, code) {
     const current = jobs.get(job.poiId);
     if (current?.revision === job.revision && current.status === 'processing') {
-      current.status = current.attempts >= 3 ? 'failed' : 'pending';
-      current.nextAttemptAt = Date.now() + [0, 10000, 60000, 600000, 1800000][Math.min(current.attempts, 4)];
-      if (current.attempts > 4) current.nextAttemptAt = Date.now() + 3600000;
+      current.status = current.attempts >= 3
+        || ['UNTRUSTED_TRANSLATION', 'UNVERIFIED_TRANSLATION', 'PROVIDER_AUTH'].includes(code)
+        ? 'failed' : 'pending';
+      current.nextAttemptAt = Date.now() + (code === 'PROVIDER_RATE_LIMIT'
+        ? current.attempts === 1 ? 60000 : 600000 : current.attempts === 1 ? 10000 : 60000);
       current.leaseUntil = null;
       current.lastErrorCode = code;
     }

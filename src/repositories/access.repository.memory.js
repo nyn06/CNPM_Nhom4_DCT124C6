@@ -14,14 +14,20 @@ class AccessRepository {
     return Array.from(vouchers.values(), (voucher) => ({ ...voucher }));
   }
 
+  findVoucherByCodeHash(codeHash) {
+    const voucher = vouchers.get(vouchers.has(codeHash) ? codeHash : shortCodes.get(codeHash));
+    return voucher ? { ...voucher } : null;
+  }
+
   // Atomic within ONE Node process: validation, session creation and voucher
   // consumption run synchronously with no await between them. A database
   // implementation must replace this with a transaction + conditional update.
-  redeemOnce(codeHash, createSession) {
+  redeemOnce(codeHash, createSession, allowUnpriced = false) {
     const voucherKey = vouchers.has(codeHash) ? codeHash : shortCodes.get(codeHash);
     const voucher = vouchers.get(voucherKey);
     if (!voucher) return { failure: 'invalid' };
     if (voucher.status !== 'unused') return { failure: 'used' };
+    if (voucher.durationMinutes === null && !allowUnpriced) return { failure: 'payment' };
     const { session, accessToken } = createSession({ ...voucher });
     sessions.set(session.tokenHash, { ...session });
     vouchers.set(voucherKey, {
@@ -55,6 +61,7 @@ class AccessRepository {
     vouchers.clear();
     shortCodes.clear();
     sessions.clear();
+    require('./purchase.repository.memory').clear();
   }
 }
 

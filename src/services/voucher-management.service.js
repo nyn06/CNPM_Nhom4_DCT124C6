@@ -39,7 +39,7 @@ function options(query, kind) {
     const createdDate = query.createdDate === undefined
       ? '' : query.createdDate;
 
-    if (!['all', '15', '60', '120'].includes(duration)
+    if (!['all', '15', '30', '60', '120'].includes(duration)
       || typeof createdDate !== 'string'
       || (createdDate && !/^\d{4}-\d{2}-\d{2}$/.test(createdDate))) {
       throw invalid();

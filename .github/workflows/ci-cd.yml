@@ -43,11 +43,13 @@ jobs:
     env:
       DB_HOST: localhost
       DB_PORT: '14333'
-      DB_NAME: AutoNarrationTest
+      DB_NAME: AutoNarrationDBTest
       DB_USER: sa
       DB_ENCRYPT: 'true'
       DB_TRUST_SERVER_CERTIFICATE: 'true'
       DB_INTEGRATION: '1'
+      DB_INTEGRATION_BASELINE: empty
+      DEMO_PAYMENT_ENABLED: 'true'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

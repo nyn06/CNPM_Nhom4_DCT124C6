@@ -31,6 +31,26 @@ describe('VIETMAP server adapter', () => {
     expect(url.searchParams.get('text')).toContain('Phường thử');
   });
 
+  test('Autocomplete nhận ref_id vm nhiều đoạn từ VietMap và Place v4 trả tọa độ thật', async () => {
+    const refId = 'vm:1234567:AbC_-123';
+    global.fetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => [{
+      ref_id: refId, name: '40 Tú Xương', address: 'Phường Xuân Hòa, Thành phố Hồ Chí Minh',
+      display: '40 Tú Xương, Phường Xuân Hòa, Thành phố Hồ Chí Minh',
+    }] });
+    const [item] = await vietmap.suggest({ streetAddress: '40 Tú Xương',
+      ward: 'Phường Xuân Hòa', city: 'Thành phố Hồ Chí Minh' });
+    expect(item).toMatchObject({ name: '40 Tú Xương', address: 'Phường Xuân Hòa, Thành phố Hồ Chí Minh' });
+    expect(item).not.toHaveProperty('ref_id');
+    global.fetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({
+      lat: 10.7795581, lng: 106.6851598, hs_num: '', street: ' ',
+      address: 'Phường Xuân Hòa, Thành phố Hồ Chí Minh',
+      ward: 'Phường Xuân Hòa', city: 'Thành phố Hồ Chí Minh',
+    }) });
+    expect(await vietmap.place(item.id)).toEqual({ latitude: 10.7795581, longitude: 106.6851598,
+      streetAddress: '40 Tú Xương', ward: 'Phường Xuân Hòa', city: 'Thành phố Hồ Chí Minh' });
+    expect(global.fetch.mock.calls[1][0].searchParams.get('refid')).toBe(refId);
+  });
+
   test('Place v4 dùng refid nguyên vẹn, chỉ ánh xạ thành phần provider xác nhận', async () => {
     const [item] = await vietmap.suggest({ streetAddress: '123 Đường thử', ward: '', city: '' });
     global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({
