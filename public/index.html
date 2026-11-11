@@ -16,6 +16,7 @@
   <script src="/leaflet/leaflet.js" defer></script>
   <script src="/js/map.js" defer></script>
   <script src="/js/app.js" defer></script>
+  <script src="/js/back-to-top.js" defer></script>
 </head>
 <body>
   <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -56,7 +57,7 @@
       <div class="subheading"><h2 id="access-title" data-i18n="accessTitle">Vé tham quan QR</h2><span id="access-status" class="badge">Chưa kích hoạt</span></div>
       <form id="access-form">
         <label for="voucher-code" data-i18n="voucherLabel">Mã voucher</label>
-        <div class="access-actions"><input id="voucher-code" type="text" autocomplete="off" spellcheck="false" maxlength="2048" data-i18n-placeholder="voucherPlaceholder" placeholder="Quét QR hoặc nhập mã vé" required><button id="activate-voucher" class="button primary" type="submit" data-i18n="activateVoucher">Kích hoạt vé</button></div>
+        <div class="access-actions"><input id="voucher-code" type="text" autocomplete="off" spellcheck="false" maxlength="2048" data-i18n-placeholder="voucherPlaceholder" placeholder="Quét QR hoặc nhập mã vé" required><button id="activate-voucher" class="button primary" type="submit">Tiếp tục</button></div>
       </form>
             <div class="qr-tools">
         <div class="qr-actions">
@@ -81,6 +82,17 @@
         </div>
       </div>
       <p id="access-message" class="helper" role="status">Kích hoạt vé để nghe thuyết minh. Đây là mô phỏng cấp vé, chưa có thanh toán thật.</p>
+      <div id="purchase-panel" class="purchase-panel" hidden>
+        <h3 id="purchase-heading">Chọn thời gian tham quan</h3>
+        <p id="purchase-summary" class="helper" role="status"></p>
+        <div id="purchase-options" class="purchase-options"></div>
+        <div class="purchase-actions">
+          <button id="purchase-choose" class="button primary" type="button">Chọn gói</button>
+          <button id="purchase-pay" class="button primary" type="button" hidden>Thanh toán mô phỏng</button>
+          <button id="purchase-start" class="button primary" type="button" hidden>Bắt đầu tham quan</button>
+        </div>
+        <p class="helper">Thanh toán này chỉ là mô phỏng cho đồ án, không thu tiền thật. Thời gian bắt đầu khi bạn bấm Bắt đầu tham quan.</p>
+      </div>
       <dl class="access-times"><div><dt data-i18n="expiry">Hết hạn lúc</dt><dd id="access-expiry">—</dd></div><div><dt data-i18n="remaining">Thời gian còn lại</dt><dd id="access-countdown">00:00</dd></div></dl>
     </section>
     <div class="workspace">
@@ -122,7 +134,7 @@
 
       <div class="discovery-column">
         <section id="geofence-panel" class="panel discovery-panel" data-state="idle" aria-labelledby="discovery-title" aria-busy="false">
-          <div class="result-header"><div class="section-heading"><span class="step-number">02</span><h2 id="discovery-title" data-i18n="discoveryTitle">Khám phá quanh bạn</h2></div><span id="geofence-badge" class="badge" data-tone="neutral">Chờ vị trí</span></div>
+          <div class="result-header"><div class="section-heading"><span class="step-number">02</span><h2 id="discovery-title" data-i18n="discoveryTitle">Khám phá quanh bạn</h2></div><span id="geofence-badge" class="badge" data-tone="neutral" data-i18n="waitingLocation">Chờ vị trí</span></div>
           <div class="map-shell">
             <div id="poi-map" role="region" aria-label="Bản đồ các địa điểm và vị trí hiện tại" data-i18n-aria-label="mapRegion"></div>
             <button id="map-recenter" class="button secondary map-recenter" type="button" disabled data-i18n="recenter">Về vị trí của tôi</button>
@@ -239,5 +251,15 @@
       <button type="button" class="button poi-use" data-development-only><span data-i18n="useCoordinates">Dùng tọa độ này để giả lập</span> <svg class="icon"><use href="#icon-arrow"/></svg></button>
     </article>
   </template>
+  <!-- NÚT BACK TO TOP -->
+  <button
+    type="button"
+    id="back-to-top"
+    class="back-to-top"
+    aria-label="Về đầu trang"
+    title="Về đầu trang"
+  >
+    ↑
+  </button>
 </body>
 </html>

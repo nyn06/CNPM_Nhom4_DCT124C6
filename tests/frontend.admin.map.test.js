@@ -124,6 +124,34 @@ test('autocomplete chỉ tìm sau 400 ms và không tìm khi quá ngắn', async
   } finally { jest.useRealTimers(); }
 });
 
+test('nhập liên tiếp ba ô chỉ gửi một suggest; nút tìm thủ công hủy suggest đang chờ', async () => {
+  jest.useFakeTimers();
+  try {
+    const ui = setup();
+    ui.api.load(null);
+    for (const [index, [id, value]] of [['poi-street-address', '40 Tú Xương'],
+      ['poi-ward', 'Xuân Hòa'], ['poi-city', 'Thành phố Hồ Chí Minh']].entries()) {
+      const field = ui.getElementById(id);
+      field.value = value;
+      field.events.input();
+      if (index < 2) await jest.advanceTimersByTimeAsync(100);
+    }
+    await jest.advanceTimersByTimeAsync(399);
+    expect(ui.fetch).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1);
+    expect(ui.fetch).toHaveBeenCalledTimes(1);
+    expect(ui.fetch.mock.calls[0][0]).toBe('/api/admin/geocode/suggest');
+    expect(JSON.parse(ui.fetch.mock.calls[0][1].body)).toEqual({ streetAddress: '40 Tú Xương',
+      ward: 'Xuân Hòa', city: 'Thành phố Hồ Chí Minh' });
+    ui.getElementById('poi-street-address').events.input();
+    await ui.getElementById('poi-search-address').events.click();
+    await jest.advanceTimersByTimeAsync(400);
+    expect(ui.fetch.mock.calls.map(([url]) => url)).toEqual([
+      '/api/admin/geocode/suggest', '/api/admin/geocode',
+    ]);
+  } finally { jest.useRealTimers(); }
+});
+
 test('gợi ý hỗ trợ bàn phím, Place di chuyển bản đồ, tạo marker và vòng bán kính', async () => {
   jest.useFakeTimers();
   try {

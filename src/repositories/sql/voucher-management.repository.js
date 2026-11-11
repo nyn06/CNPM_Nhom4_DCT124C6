@@ -1,7 +1,7 @@
 const { sql, getPool, iso, uuid } = require('../../database/repository');
 
-const voucherStatus = `CASE WHEN Status='unused' THEN 'unused'
-  WHEN ExpiresAt<=@now THEN 'expired' ELSE 'active' END`;
+const voucherStatus = `CASE WHEN v.Status='unused' THEN 'unused'
+  WHEN v.ExpiresAt<=@now THEN 'expired' ELSE 'active' END`;
 const sessionStatus = `CASE WHEN RevokedAt IS NOT NULL THEN 'revoked'
   WHEN ExpiresAt<=@now THEN 'expired' ELSE 'active' END`;
 
@@ -22,19 +22,20 @@ function bound(pool, options) {
 async function vouchers(options) {
   const pool = await getPool();
   const where = `WHERE (@status='all' OR ${voucherStatus}=@status)
-      AND (@duration IS NULL OR DurationMinutes=@duration)
-      AND (@createdFrom IS NULL OR CreatedAt>=@createdFrom)
-      AND (@createdTo IS NULL OR CreatedAt<@createdTo)`;
+      AND (@duration IS NULL OR COALESCE(p.DurationMinutes, v.DurationMinutes)=@duration)
+      AND (@createdFrom IS NULL OR v.CreatedAt>=@createdFrom)
+      AND (@createdTo IS NULL OR v.CreatedAt<@createdTo)`;
   const [statsResult, countResult, rowsResult] = await Promise.all([
     bound(pool, options).query(`SELECT COUNT(*) AS total,
       COUNT(CASE WHEN Status='unused' THEN 1 END) AS unused,
       COUNT(CASE WHEN Status='redeemed' AND (ExpiresAt>@now OR ExpiresAt IS NULL) THEN 1 END) AS active,
       COUNT(CASE WHEN Status='redeemed' AND ExpiresAt<=@now THEN 1 END) AS expired
-      FROM dbo.Vouchers`),
-    bound(pool, options).query(`SELECT COUNT(*) AS total FROM dbo.Vouchers ${where}`),
-    bound(pool, options).query(`SELECT Id, DurationMinutes, CreatedAt, RedeemedAt, ExpiresAt,
-      ${voucherStatus} AS DisplayStatus FROM dbo.Vouchers ${where}
-      ORDER BY CreatedAt DESC, Id DESC OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`),
+      FROM dbo.Vouchers v`),
+    bound(pool, options).query(`SELECT COUNT(*) AS total FROM dbo.Vouchers v LEFT JOIN dbo.VoucherPayments p ON p.VoucherId=v.Id ${where}`),
+    bound(pool, options).query(`SELECT v.Id, v.DurationMinutes, v.CreatedAt, v.RedeemedAt, v.ExpiresAt,
+      p.Id AS PaymentId, p.DurationMinutes AS PurchasedMinutes, p.AmountVnd, p.Status AS PaymentStatus, p.PaidAt,
+      ${voucherStatus} AS DisplayStatus FROM dbo.Vouchers v LEFT JOIN dbo.VoucherPayments p ON p.VoucherId=v.Id ${where}
+      ORDER BY v.CreatedAt DESC, v.Id DESC OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`),
   ]);
   const total = countResult.recordset[0].total;
   const stats = statsResult.recordset[0];
@@ -42,7 +43,9 @@ async function vouchers(options) {
     stats: { total: stats.total, unused: stats.unused, active: stats.active, expired: stats.expired },
     generatedAt: options.now,
     items: rowsResult.recordset.map((row) => ({ id: uuid(row.Id), durationMinutes: row.DurationMinutes,
-      createdAt: iso(row.CreatedAt), redeemedAt: iso(row.RedeemedAt), expiresAt: iso(row.ExpiresAt), status: row.DisplayStatus })) };
+      createdAt: iso(row.CreatedAt), redeemedAt: iso(row.RedeemedAt), expiresAt: iso(row.ExpiresAt), status: row.DisplayStatus,
+      payment: row.PaymentId && { id: uuid(row.PaymentId), durationMinutes: row.PurchasedMinutes,
+        amountVnd: row.AmountVnd, status: row.PaymentStatus, paidAt: iso(row.PaidAt) } })) };
 }
 
 async function activations(options) {

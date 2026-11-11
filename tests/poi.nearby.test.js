@@ -197,9 +197,9 @@ describe('GET /api/pois/nearby: geofence', () => {
     expect(res.body.nearestPoi.id).toBe(closer.id);
   });
 
-  it('distance bằng đúng bán kính vẫn nằm trong geofence', async () => {
-    // Dùng cùng phép đo để kiểm tra riêng điều kiện <= tại đúng ranh giới.
-    const radius = calculateDistanceInMeters(0, 0, 0, 1);
+  it('distance sát dưới bán kính nguyên vẫn nằm trong geofence', async () => {
+    // Làm tròn bán kính lên mét nguyên để điểm nằm sát phía trong ranh giới.
+    const radius = Math.ceil(calculateDistanceInMeters(0, 0, 0, 1));
     const poi = await createPoi({ latitude: 0, longitude: 1, geofenceRadius: radius });
     const res = await request(app).get('/api/pois/nearby').query({ lat: '0', lng: '0' });
 
@@ -208,7 +208,7 @@ describe('GET /api/pois/nearby: geofence', () => {
     expect(res.body.nearestPoi.id).toBe(poi.id);
   });
 
-  it.each([[50.004, 50, false], [49.996, 49.997, true]])(
+  it.each([[50.004, 50, false], [49.996, 50, true]])(
     'không làm tròn trước khi so sánh: distance %s m, radius %s m, inside %s',
     async (distance, radius, inside) => {
       const poi = await createPoi({

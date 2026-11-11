@@ -20,11 +20,21 @@
   let accessState = 'initial';
 
   function message(text, tone = 'neutral') {
-    messageKey = Object.keys(window.TOUR_TRANSLATIONS?.vi || {}).find((key) => t(key) === text) || null;
-    byId('access-message').textContent = text;
+    const dictionaries = window.TOUR_TRANSLATIONS || {};
+    const source = dictionaries.vi || {};
+
+    messageKey = Object.keys(source).find(
+      (key) => key === text ||
+        Object.values(dictionaries).some(
+          (dictionary) => dictionary?.[key] === text
+        )
+    ) || null;
+
+    byId('access-message').textContent =
+      messageKey ? t(messageKey) : text;
+
     byId('access-message').dataset.tone = tone;
   }
-
   function active() { return !!token && performance.now() < deadline && !disposed; }
   function notify() {
     byId('toggle-tour').disabled = !active();
@@ -58,7 +68,7 @@
   function accept(data, accessToken) {
     const serverRemaining = Date.parse(data?.expiresAt) - Date.parse(data?.serverTime);
     const remaining = serverRemaining - Math.max(0, performance.now() - requestStartedAt);
-    if (!/^[a-f0-9]{64}$/.test(accessToken || '') || ![15, 60, 120].includes(data?.durationMinutes)
+    if (!/^[a-f0-9]{64}$/.test(accessToken || '') || ![15, 30, 60, 120].includes(data?.durationMinutes)
       || !Number.isFinite(remaining) || remaining <= 0 || serverRemaining > data.durationMinutes * 60000) {
       throw new Error(t('invalidSessionResponse'));
     }
@@ -115,8 +125,20 @@
     if (!/^(?:[a-f0-9]{64}|[A-Za-z0-9]{7})$/.test(code)) { message(t('invalidTicket'), 'error'); return; }
     busy = true;
     byId('activate-voucher').disabled = true;
-    message(t('activatingTicket'));
+    message('Đang kiểm tra mã vé…');
     try {
+      const state = await request('/api/access/inspect', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      if (disposed) return;
+      if (!state.legacy) {
+        purchaseCode = code;
+        try { sessionStorage.setItem('tourist-purchase-code', code); } catch { /* Memory-only fallback. */ }
+        renderPurchase(state);
+        return;
+      }
+      if (state.status === 'active') { message(t('ticketUsed'), 'error'); return; }
       const data = await request('/api/access/redeem', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ code }),
@@ -132,6 +154,69 @@
     } catch (error) { if (!disposed) message(error.message, 'error'); }
     finally { busy = false; byId('activate-voucher').disabled = false; }
   }
+
+  let purchaseCode = null;
+  function renderPurchase(state) {
+    const panel = byId('purchase-panel');
+    panel.hidden = false;
+    const used = state.status === 'active' || state.status === 'expired';
+    byId('purchase-options').replaceChildren();
+    const selected = state.payment?.durationMinutes || 15;
+    for (const item of state.packages) {
+      const label = document.createElement('label');
+      label.className = 'purchase-option';
+      const input = document.createElement('input');
+      input.type = 'radio'; input.name = 'tour-package'; input.value = String(item.durationMinutes);
+      input.checked = item.durationMinutes === selected;
+      const caption = document.createElement('span');
+      caption.textContent = `${item.durationMinutes} phút · ${item.amountVnd.toLocaleString('vi-VN')} ₫`;
+      label.append(input, caption);
+      byId('purchase-options').append(label);
+    }
+    const paid = state.payment?.status === 'paid';
+    byId('purchase-options').hidden = paid || used;
+    byId('purchase-choose').hidden = paid || used;
+    byId('purchase-pay').hidden = !state.payment || paid || !state.demoEnabled;
+    byId('purchase-start').hidden = !paid || used;
+    byId('purchase-heading').textContent = state.status === 'expired' ? 'Vé đã hết hạn'
+      : state.status === 'active' ? 'Vé đã kích hoạt'
+      : paid ? 'Thanh toán mô phỏng thành công' : state.payment ? 'Xác nhận thanh toán' : 'Chọn thời gian tham quan';
+    byId('purchase-summary').textContent = state.status === 'expired' ? 'Phiên tham quan đã hết hạn. Hãy dùng mã vé khác.'
+      : state.status === 'active' ? 'Vé đã bắt đầu. Mở lại trên thiết bị đã kích hoạt để tiếp tục.'
+      : state.payment ? `Giao dịch ${state.payment.id} · ${state.payment.durationMinutes} phút · ${state.payment.amountVnd.toLocaleString('vi-VN')} ₫ · ${paid ? 'Đã thanh toán, chưa kích hoạt' : 'Chờ thanh toán'}`
+        : 'Thời gian sử dụng do bạn chọn. Đồng hồ chưa bắt đầu.';
+    if (state.payment && !paid && !state.demoEnabled) message('Thanh toán mô phỏng chưa được bật trên máy chủ này.', 'error');
+    else message(paid ? 'Đã thanh toán mô phỏng. Bấm Bắt đầu tham quan khi bạn sẵn sàng.' : 'Chọn gói để tiếp tục.', 'success');
+  }
+  async function purchaseAction(path, payload = {}) {
+    if (busy || disposed || !purchaseCode) return;
+    busy = true;
+    try {
+      const data = await request(`/api/access/${path}`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ code: purchaseCode, ...payload }) });
+      if (disposed) return;
+      if (path === 'start') {
+        byId('purchase-panel').hidden = true;
+        try { sessionStorage.removeItem('tourist-purchase-code'); } catch { /* Storage may be blocked. */ }
+        if (token) lose(t('switchingTicket'));
+        accept(data, data.accessToken);
+        byId('toggle-tour').click?.();
+        byId('voucher-code').value = '';
+        const url = new URL(window.location.href);
+        url.searchParams.delete('voucher');
+        window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+      } else renderPurchase(data);
+    } catch (error) { if (!disposed) message(error.message, 'error'); }
+    finally { busy = false; }
+  }
+  byId('purchase-choose').addEventListener('click', () => {
+    const selected = byId('purchase-options').children.find?.((label) => label.children[0].checked);
+    const minutes = Number(selected?.children[0].value || byId('purchase-options').querySelector('input:checked')?.value);
+    purchaseAction('choose', { durationMinutes: minutes });
+  });
+  byId('purchase-pay').addEventListener('click', () => purchaseAction('demo-pay'));
+  byId('purchase-start').addEventListener('click', () => purchaseAction('start'));
 
   async function checkSession(savedToken = token) {
     if (!savedToken || busy || disposed) return;
@@ -385,10 +470,18 @@
   window.addEventListener('pagehide', stopQrCamera);
   byId('access-form').addEventListener('submit', redeem);
   byId('toggle-tour').disabled = true;
-  const code = new URL(window.location.href).searchParams.get('voucher');
+  let code = new URL(window.location.href).searchParams.get('voucher');
+  if (!code) { try { code = sessionStorage.getItem('tourist-purchase-code'); } catch { /* Start without saved purchase. */ } }
   if (code) {
     byId('voucher-code').value = code;
     message(t('qrReceived'));
+    if (/^(?:[a-f0-9]{64}|[A-Za-z0-9]{7})$/.test(code)) {
+      request('/api/access/inspect', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ code }) }).then((state) => {
+        if (disposed) return;
+        if (!state.legacy) { purchaseCode = code; renderPurchase(state); }
+      }).catch((error) => { if (!disposed) message(error.message, 'error'); });
+    }
   }
   let savedToken;
   try { savedToken = sessionStorage.getItem(storageKey); } catch { /* Start inactive. */ }

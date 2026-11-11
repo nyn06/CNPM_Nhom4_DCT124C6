@@ -20,6 +20,16 @@
     const translated = poi.translations?.[byId('language').value];
     return translated ? { ...poi, ...translated } : poi;
   };
+  const descriptionText = (poi) => {
+    const language = byId('language').value;
+    const status = poi.translationStatus?.[language]?.description;
+    const key = { missing: 'poiDescriptionFallbackMissing', pending: 'poiDescriptionFallbackPending',
+      processing: 'poiDescriptionFallbackPending', failed: 'poiDescriptionFallbackFailed',
+      rejected: 'poiDescriptionFallbackRejected',
+      unverified: poi.translationFallback?.[language] === false
+        ? 'poiDescriptionUnverified' : 'poiDescriptionFallbackUnverified' }[status];
+    return [poi.description, language !== 'vi' && key ? t(key) : ''].filter(Boolean).join('\n');
+  };
   const t = (key, params) => {
     const value = window.tourT(key, params);
     return value === key ? ({ locationUnknown: 'Chưa xác định vị trí',
@@ -27,12 +37,27 @@
   };
   const dynamicText = new Map();
   function setText(id, key, params = {}) {
+    const element = byId(id);
+    if (!element) return;
+
     if (Object.prototype.hasOwnProperty.call(translations[sourceLanguage], key)) {
       dynamicText.set(id, { key, params });
-      byId(id).textContent = t(key, params);
+      element.textContent = t(key, params);
+      return;
+    }
+
+    const foundKey = Object.keys(translations[sourceLanguage]).find(
+      (candidate) => Object.values(translations).some(
+        (dictionary) => dictionary?.[candidate] === key
+      )
+    );
+
+    if (foundKey) {
+      dynamicText.set(id, { key: foundKey, params: {} });
+      element.textContent = t(foundKey);
     } else {
       dynamicText.delete(id);
-      byId(id).textContent = key;
+      element.textContent = key;
     }
   }
   let audioObjectUrl = null;
@@ -280,7 +305,7 @@
     byId('narration-text').hidden = true;
     byId('retry-narration').hidden = true;
     byId('narration-panel').setAttribute('aria-busy', 'false');
-    setMessage('narration-status', t('narrationWaiting'));
+    setMessage('narration-status', 'narrationWaiting');
   }
 
   function clearAudio() {
@@ -299,7 +324,7 @@
     byId('generate-audio').hidden = true;
     byId('generate-audio').disabled = false;
     byId('audio-panel').setAttribute('aria-busy', 'false');
-    setMessage('audio-status', t('audioWaiting'));
+    setMessage('audio-status', 'audioWaiting');
   }
 
   async function displayAudio(narration) {
@@ -506,7 +531,7 @@
         dynamicText.delete('nearest-address');
         byId('nearest-address').textContent = byId('language').value === 'vi' ? savedAddress || poi.address : poi.address || savedAddress;
       } else setText('nearest-address', 'noAddress');
-      byId('nearest-description').textContent = poi.description || '';
+      byId('nearest-description').textContent = descriptionText(poi);
       byId('nearest-distance').textContent = `${poi.distance.toLocaleString(byId('language').value, { maximumFractionDigits: 2 })} m`;
       byId('nearest-radius').textContent = `${poi.geofenceRadius} m`;
       setText('matched-count', data.pois.length > 1 ? 'multipleInside' : 'nearestInside',
@@ -522,6 +547,7 @@
     cancelNearby();
     const requestId = nearbyRequest;
     const revision = locationRevision;
+    const language = byId('language').value;
     const controller = new AbortController();
     nearbyController = controller;
     byId('check-simulation').disabled = source === 'GPS giả lập';
@@ -531,12 +557,12 @@
     try {
       // Cả GPS thật và giả lập dùng cùng API; geofence do Backend quyết định.
       const query = new URLSearchParams({ lat: location.latitude, lng: location.longitude });
-      if (byId('language').value !== 'vi') query.set('lang', byId('language').value);
+      if (language !== 'vi') query.set('lang', language);
       const data = await fetchJson(`/api/pois/nearby?${query}`, controller);
-      if (requestId !== nearbyRequest || revision !== locationRevision) return;
+      if (requestId !== nearbyRequest || revision !== locationRevision || language !== byId('language').value) return;
       renderNearby(data, source);
     } catch (error) {
-      if (requestId !== nearbyRequest || revision !== locationRevision) return;
+      if (requestId !== nearbyRequest || revision !== locationRevision || language !== byId('language').value) return;
       setResult('error', 'nearbyErrorTitle', error.message);
       if (autoEnabled) setMessage('auto-status', 'geofenceRetry', 'error');
     } finally {
@@ -886,7 +912,7 @@ function applyPoiSearch() {
         const poi = displayPoi(source);
         displayedNearbyPoi = { ...poi, distance: displayedNearbyPoi.distance };
         byId('nearest-name').textContent = t('arrivedAtName', { name: poi.name });
-        byId('nearest-description').textContent = poi.description || '';
+        byId('nearest-description').textContent = descriptionText(poi);
         const parts = [poi.streetAddress, poi.ward, poi.city].filter(Boolean).join(', ');
         byId('nearest-address').textContent = byId('language').value === 'vi' ? parts || poi.address : poi.address || parts;
       }
@@ -974,23 +1000,51 @@ function applyPoiSearch() {
   }
   function updateLanguage() {
     const language = byId('language').value;
+    // 1. Dịch lại toàn bộ giao diện
     applyTranslations();
+    // 2. Cập nhật các tiêu đề và nút
     pendingAutoEntry = null;
-    if (autoEnabled && currentPoi) setMessage('auto-status', 'autoPlayReady');
-    setText('tour-button-label', autoEnabled ? 'stopTour' : 'startTour');
-    setText('language-note', 'selectedLanguageHelp', { language: languageNames[language] });
-    setText('audio-title', 'audioLanguage', { language: languageNames[language] });
-    setText('narration-title', 'narrationLanguage', { language: languageNames[language] });
+
+    if (autoEnabled && currentPoi) {
+      setMessage('auto-status', 'autoPlayReady');
+    }
+
+    setText('tour-button-label',
+      autoEnabled ? 'stopTour' : 'startTour');
+
+    setText('language-note', 'selectedLanguageHelp', {
+      language: languageNames[language]
+    });
+
+    setText('audio-title', 'audioLanguage', {
+      language: languageNames[language]
+    });
+
+    setText('narration-title', 'narrationLanguage', {
+      language: languageNames[language]
+    });
+    // 3. Dịch lại danh sách địa điểm
     if (loadedPois) {
       renderPoiList(loadedPois);
       refreshDisplayedPoi();
     }
+    // 4. Hủy yêu cầu tìm kiếm cũ nếu còn chạy
+    if (nearbyController) {
+      cancelNearby();
+    }
+    // 5. Cập nhật bản đồ và vé QR
     tourMap?.refreshLanguage?.();
     access.refreshLanguage?.();
-    try { localStorage.setItem('poi-demo-language', language); } catch { /* Vẫn dùng được khi storage bị chặn. */ }
+    // 6. Lưu ngôn ngữ người dùng chọn
+    try {
+      localStorage.setItem('poi-demo-language', language);
+    } catch {
+      // Vẫn sử dụng được khi storage bị chặn
+    }
+    // Language changes reuse the current geofence result and refresh its narration.
+    // A new position will trigger the next nearby request as usual.
     if (currentPoi) loadNarration(currentPoi);
   }
-
   byId('language').replaceChildren(...Object.entries(languageNames).map(([code, name]) => {
     const option = document.createElement('option');
     option.value = code;

@@ -292,6 +292,21 @@ test('danh sách và bản xem trước POI đổi ngôn ngữ; ô tiếng Việ
   expect(ui.fetch.mock.calls).toHaveLength(requests);
 });
 
+test('Admin hiển thị mô tả unverified đã có và giữ ô chỉnh sửa tiếng Việt', async () => {
+  const poi = { ...basePoi, translationStatus: { en: { description: 'unverified' } },
+    translationFallback: { en: false },
+    resolvedTranslations: { en: { name: 'Pho Viet Nam',
+      description: 'An English description with uncertain quality.', address: 'Ho Chi Minh City' } } };
+  const ui = await setup({ pois: [poi], withI18n: true });
+  await select(ui);
+  ui.window.ADMIN_I18N.setLanguage('en');
+  expect(ui.elements['selected-poi-summary'].textContent)
+    .toContain('An English description with uncertain quality.');
+  expect(ui.elements['selected-poi-summary'].textContent)
+    .toContain('not been fully verified');
+  expect(ui.elements['poi-description'].value).toBe(basePoi.description);
+});
+
 test('Admin quản lý POI không có thao tác dịch thông tin thủ công', async () => {
   const ui = await setup({ withI18n: true });
   await select(ui);
@@ -540,7 +555,8 @@ describe('Stage 7: danh sách và CRUD POI', () => {
     expect(ui.elements['action-status'].textContent).toContain('Đã lưu thay đổi');
   });
 
-  it.each([['name', ' '], ['description', ''], ['category', ''], ['radius', '0'], ['radius', '12abc']])(
+  it.each([['name', ' '], ['description', ''], ['category', ''], ['radius', '0'], ['radius', '-5'],
+    ['radius', '0.5'], ['radius', '1.5'], ['radius', '1e2'], ['radius', '12abc']])(
     'validation %s=%s không gửi request ghi', async (field, value) => {
       const ui = await setup();
       click(ui.elements['new-poi']);
@@ -552,6 +568,44 @@ describe('Stage 7: danh sách và CRUD POI', () => {
       expect(ui.elements['action-status'].dataset.tone).toBe('error');
     }
   );
+
+  it.each(['new', 'edit'])('chặn nhập, dán và lưu bán kính không hợp lệ ở chế độ %s', async (mode) => {
+    const ui = await setup();
+    if (mode === 'new') click(ui.elements['new-poi']);
+    else await select(ui);
+    fill(ui);
+    ui.map.confirm(10, 106);
+    const input = ui.elements['poi-radius'];
+    for (const key of ['-', '+', '.', 'e', 'E']) {
+      const event = { key, preventDefault: jest.fn() };
+      input.events.keydown(event);
+      expect(event.preventDefault).toHaveBeenCalled();
+    }
+    input.value = '';
+    const zero = { key: '0', preventDefault: jest.fn() };
+    input.events.keydown(zero);
+    expect(zero.preventDefault).toHaveBeenCalled();
+    const invalidInput = { data: '-3', preventDefault: jest.fn() };
+    input.events.beforeinput(invalidInput);
+    expect(invalidInput.preventDefault).toHaveBeenCalled();
+    for (const value of ['-3', '0', '1.5', 'abc']) {
+      const event = { clipboardData: { getData: () => value }, preventDefault: jest.fn() };
+      input.events.paste(event);
+      expect(event.preventDefault).toHaveBeenCalled();
+    }
+    input.value = '-3';
+    input.events.input();
+    expect(input.attributes['aria-invalid']).toBe('true');
+    submit(ui.elements['poi-form']);
+    expect(requests(ui, mode === 'new' ? 'POST' : 'PUT')).toHaveLength(0);
+    expect(ui.elements['action-status'].textContent).toBe('Bán kính geofence phải là số nguyên dương lớn hơn hoặc bằng 1 mét.');
+    input.value = '1';
+    input.events.input();
+    expect(input.attributes['aria-invalid']).toBe('false');
+    submit(ui.elements['poi-form']);
+    await flush();
+    expect(requests(ui, mode === 'new' ? 'POST' : 'PUT')).toHaveLength(1);
+  });
 
   it('không lưu POI mới khi vị trí chưa được xác nhận', async () => {
     const ui = await setup({ pois: [] });

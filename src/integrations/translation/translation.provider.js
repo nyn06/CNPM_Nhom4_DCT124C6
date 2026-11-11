@@ -1,6 +1,7 @@
-function providerError(message, statusCode) {
+function providerError(message, statusCode, code) {
   const error = new Error(message);
   error.statusCode = statusCode;
+  error.code = code;
   return error;
 }
 
@@ -49,20 +50,22 @@ class TranslationProvider {
       if (!response.ok) {
         // Không đưa response body, URL hoặc lỗi gốc của nhà cung cấp ra client/log.
         if (response.status === 401 || response.status === 403) {
-          throw providerError('API dịch từ chối xác thực. Kiểm tra cấu hình API key.', 503);
+          throw providerError('API dịch từ chối xác thực. Kiểm tra cấu hình API key.', 503, 'PROVIDER_AUTH');
         }
-        throw providerError('API dịch trả về HTTP error.', 502);
+        if (response.status === 429)
+          throw providerError('API dịch đã đạt hạn mức tạm thời.', 503, 'PROVIDER_RATE_LIMIT');
+        throw providerError('API dịch trả về HTTP error.', 502, 'PROVIDER_HTTP_ERROR');
       }
       const data = await response.json();
       if (!data || typeof data.translatedText !== 'string' || !data.translatedText.trim()) {
-        throw providerError('API dịch trả nội dung không hợp lệ hoặc rỗng.', 502);
+        throw providerError('API dịch trả nội dung không hợp lệ hoặc rỗng.', 502, 'PROVIDER_INVALID_RESPONSE');
       }
       return { text: data.translatedText.trim() };
     } catch (error) {
-      if (controller.signal.aborted) throw providerError('API dịch quá thời gian chờ.', 504);
-      if (error?.statusCode === 503) throw providerError('API dịch từ chối xác thực. Kiểm tra cấu hình API key.', 503);
-      if (error instanceof TypeError) throw providerError('Không kết nối được dịch vụ dịch.', 503);
-      throw providerError('Không nhận được bản dịch hợp lệ từ API dịch.', 502);
+      if (controller.signal.aborted) throw providerError('API dịch quá thời gian chờ.', 504, 'PROVIDER_TIMEOUT');
+      if (error?.statusCode) throw error;
+      if (error instanceof TypeError) throw providerError('Không kết nối được dịch vụ dịch.', 503, 'PROVIDER_NETWORK');
+      throw providerError('Không nhận được bản dịch hợp lệ từ API dịch.', 502, 'PROVIDER_INVALID_RESPONSE');
     } finally {
       clearTimeout(timer);
     }

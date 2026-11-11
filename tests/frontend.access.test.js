@@ -16,17 +16,21 @@ const sessionData = (remaining = 15 * 60000) => ({
   expiresAt: new Date(Date.now() + remaining).toISOString(),
 });
 const element = () => ({
-  value: '', checked: false, textContent: '', disabled: false, hidden: false, dataset: {}, attributes: {}, events: {},
+  value: '', checked: false, textContent: '', disabled: false, hidden: false, dataset: {}, attributes: {}, events: {}, children: [],
   setAttribute(name, value) { this.attributes[name] = value; },
   getAttribute(name) { return this.attributes[name] || null; },
   removeAttribute(name) { delete this.attributes[name]; },
   addEventListener(name, callback) { this.events[name] = callback; },
-  replaceChildren: jest.fn(), append: jest.fn(), focus: jest.fn(), scrollIntoView: jest.fn(),
+  replaceChildren(...children) { this.children = children; }, append(...children) { this.children.push(...children); },
+  querySelector() { return this.children.flatMap((child) => child.children).find((child) => child.checked); },
+  click() { this.events.click?.(); }, focus: jest.fn(), scrollIntoView: jest.fn(),
   pause: jest.fn(), load: jest.fn(), play: jest.fn().mockResolvedValue(),
 });
 
-async function setup({ href = 'http://localhost:3000/', savedToken, sessionResponse, storageBlocked = false } = {}) {
+async function setup({ href = 'http://localhost:3000/', savedToken, sessionResponse,
+  initialInspectState, storageBlocked = false } = {}) {
   const elements = Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => [match[1], element()]));
+  elements['purchase-panel'].hidden = true;
   const storage = new Map(savedToken ? [['tourist-access-token', savedToken]] : []);
   const sessionStorage = {
     getItem: jest.fn((key) => { if (storageBlocked) throw new Error('Blocked'); return storage.get(key); }),
@@ -35,6 +39,7 @@ async function setup({ href = 'http://localhost:3000/', savedToken, sessionRespo
   };
   const state = { nearby: outside, overrides: new Map(), metadata: true, hasAudio: true, audioType: 'audio/wav' };
   if (sessionResponse) state.overrides.set('/api/access/session', sessionResponse);
+  if (initialInspectState) state.overrides.set('/api/access/inspect', json(initialInspectState));
   const fetch = jest.fn(async (url, options) => {
     if (state.overrides.has(url)) {
       const value = state.overrides.get(url);
@@ -42,6 +47,7 @@ async function setup({ href = 'http://localhost:3000/', savedToken, sessionRespo
       return typeof value === 'function' ? value(options) : value;
     }
     if (url === '/api/pois') return json([]);
+    if (url === '/api/access/inspect') return json({ legacy: true, status: 'unused' });
     if (url === '/api/access/redeem' || url === '/api/access/session') return json(sessionData());
     if (url.startsWith('/api/pois/nearby?')) return json(state.nearby);
     if (url.startsWith('/api/pois/active-poi/narrations/')) {
@@ -114,6 +120,43 @@ it('opening QR prefills the code without redeem, storage writes, autoplay or GPS
   expect(ui.geolocation.watchPosition).not.toHaveBeenCalled();
   expect(ui.audio.play).not.toHaveBeenCalled();
   expect(ui.elements['toggle-tour'].disabled).toBe(true);
+});
+
+it('new QR keeps its purchased state across inspect and starts GPS only after Start', async () => {
+  const ui = await setup();
+  const base = { legacy: false, voucherId: 'voucher-1', packages: [15, 30, 60].map((durationMinutes) => ({
+    durationMinutes, amountVnd: durationMinutes * 1000 })), demoEnabled: true };
+  const payment = { id: 'transaction-1', durationMinutes: 30, amountVnd: 30000, status: 'pending', startedAt: null };
+  ui.state.overrides.set('/api/access/inspect', json({ ...base, status: 'unselected', payment: null }));
+  ui.state.overrides.set('/api/access/choose', json({ ...base, status: 'pending', payment }));
+  ui.state.overrides.set('/api/access/demo-pay', json({ ...base, status: 'paid', payment: { ...payment, status: 'paid' } }));
+  ui.state.overrides.set('/api/access/start', json({ ...sessionData(30 * 60000), durationMinutes: 30 }));
+  ui.elements['voucher-code'].value = code;
+  ui.elements['access-form'].events.submit({ preventDefault: jest.fn() });
+  await flush();
+  expect(ui.elements['purchase-panel'].hidden).toBe(false);
+  expect(ui.geolocation.watchPosition).not.toHaveBeenCalled();
+  ui.elements['purchase-options'].children[1].children[0].checked = true;
+  ui.elements['purchase-choose'].click(); await flush();
+  expect(ui.elements['purchase-summary'].textContent).toContain('30.000');
+  ui.elements['purchase-pay'].click(); await flush();
+  expect(ui.elements['purchase-start'].hidden).toBe(false);
+  expect(ui.geolocation.watchPosition).not.toHaveBeenCalled();
+  ui.elements['purchase-start'].click(); await flush();
+  expect(ui.geolocation.watchPosition).toHaveBeenCalledTimes(1);
+  expect(ui.elements['purchase-panel'].hidden).toBe(true);
+});
+
+it('reopening a paid QR restores the paid screen without starting its clock', async () => {
+  const state = { legacy: false, status: 'paid', demoEnabled: true,
+    packages: [{ durationMinutes: 30, amountVnd: 30000 }],
+    payment: { id: 'transaction-1', durationMinutes: 30, amountVnd: 30000, status: 'paid', startedAt: null } };
+  const ui = await setup({ href: `http://localhost:3000/?voucher=${code}`, initialInspectState: state });
+  expect(ui.elements['purchase-panel'].hidden).toBe(false);
+  expect(ui.elements['purchase-start'].hidden).toBe(false);
+  expect(ui.elements['purchase-summary'].textContent).toContain('Đã thanh toán, chưa kích hoạt');
+  expect(ui.elements['access-countdown'].textContent).toBe('');
+  expect(ui.geolocation.watchPosition).not.toHaveBeenCalled();
 });
 
 it.each([
@@ -212,6 +255,7 @@ it('double activation submits exactly one request', async () => {
   ui.state.overrides.set('/api/access/redeem', () => new Promise((resolve) => { finish = resolve; }));
   ui.elements['voucher-code'].value = code;
   for (let i = 0; i < 2; i++) ui.elements['access-form'].events.submit({ preventDefault: jest.fn() });
+  await flush();
   expect(requests(ui, '/api/access/redeem')).toHaveLength(1);
   finish(json(sessionData())); await flush();
   expect(ui.elements['toggle-tour'].disabled).toBe(false);
@@ -376,6 +420,7 @@ it('pagehide cancels playback, timers and fetch, and ignores a late redeem respo
   ui.state.overrides.set('/api/access/redeem', () => new Promise((resolve) => { finish = resolve; }));
   ui.elements['voucher-code'].value = code;
   ui.elements['access-form'].events.submit({ preventDefault: jest.fn() });
+  await flush();
   const signal = requests(ui, '/api/access/redeem')[0][1].signal;
   ui.events.pagehide.forEach((fn) => fn());
   finish(json(sessionData())); await flush();

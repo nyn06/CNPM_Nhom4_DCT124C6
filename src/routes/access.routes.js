@@ -12,5 +12,10 @@ router.get('/access/vouchers', requireAdmin, requireRoles('ADMIN'), controller.l
 router.get('/access/vouchers/overview', requireAdmin, requireRoles('ADMIN'), controller.voucherOverview);
 router.get('/access/vouchers/activations', requireAdmin, requireRoles('ADMIN'), controller.activationHistory);
 router.post('/access/redeem', limitVoucherRedeems, controller.redeem);
+router.get('/access/packages', controller.packages);
+router.post('/access/inspect', limitVoucherRedeems, controller.inspect);
+router.post('/access/choose', limitVoucherRedeems, controller.choose);
+router.post('/access/demo-pay', limitVoucherRedeems, controller.demoPay);
+router.post('/access/start', limitVoucherRedeems, controller.start);
 router.get('/access/session', requireAccess, controller.getSession);
 module.exports = router;

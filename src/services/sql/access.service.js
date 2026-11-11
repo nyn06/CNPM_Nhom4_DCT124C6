@@ -11,7 +11,8 @@ const isLoopbackHost = (hostname) => hostname === 'localhost' || hostname === '[
 
 class AccessService {
   async createVoucher(data, requestOrigin) {
-    if (!data || typeof data !== 'object' || Array.isArray(data) || !DURATIONS.includes(data.durationMinutes)) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)
+      || (data.durationMinutes !== undefined && !DURATIONS.includes(data.durationMinutes))) {
       throw failure('durationMinutes chỉ nhận 15, 60 hoặc 120.', 400, 'INVALID_DURATION');
     }
     let origin;
@@ -29,7 +30,7 @@ class AccessService {
       code = crypto.randomBytes(32).toString('hex');
       activationCode = shortCode.generate();
       voucher = await accessRepository.createVoucher({
-        id: crypto.randomUUID(), codeHash: hash(code), shortCodeHash: shortCode.hash(activationCode), durationMinutes: data.durationMinutes,
+        id: crypto.randomUUID(), codeHash: hash(code), shortCodeHash: shortCode.hash(activationCode), durationMinutes: data.durationMinutes ?? null,
         status: 'unused', createdAt: new Date(Date.now()).toISOString(),
         redeemedAt: null, expiresAt: null, sessionId: null,
       });
@@ -66,6 +67,7 @@ class AccessService {
     });
     if (result.failure === 'invalid') throw failure('Mã kích hoạt không hợp lệ.', 400, 'INVALID_VOUCHER');
     if (result.failure === 'used') throw failure('Vé đã được kích hoạt. Hãy dùng mã vé khác.', 409, 'VOUCHER_USED');
+    if (result.failure === 'payment') throw failure('Vé này cần thanh toán trước khi bắt đầu.', 409, 'PAYMENT_REQUIRED');
     return { accessToken: result.accessToken, ...this.sessionInfo(result.session) };
   }
 

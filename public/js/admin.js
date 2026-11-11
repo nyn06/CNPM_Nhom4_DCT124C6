@@ -18,7 +18,9 @@
     const language = adminLanguage();
     const row = poi.translations?.[language];
     return { ...poi, ...Object.fromEntries(['name', 'description', 'address'].map((field) =>
-      [field, language !== 'vi' && row?.[field] && !row.stale?.[field] ? row[field] : poi.original?.[field] ?? poi[field]])) };
+      [field, language === 'vi' ? poi.original?.[field] ?? poi[field]
+        : poi.resolvedTranslations?.[language]?.[field]
+          ?? (row?.[field] && !row.stale?.[field] ? row[field] : poi.original?.[field] ?? poi[field])])) };
   };
   const cards = new Map();
   const controllers = new Set();
@@ -300,7 +302,10 @@
     if (selectedPoi) {
       const latest = allPois.find((poi) => poi.id === selectedPoi.id);
       if (latest) {
-        selectedPoi = { ...selectedPoi, translations: latest.translations };
+        selectedPoi = { ...selectedPoi, translations: latest.translations,
+          resolvedTranslations: latest.resolvedTranslations,
+          translationStatus: latest.translationStatus,
+          translationFallback: latest.translationFallback };
         renderSelectedPoiSummary();
         byId('poi-form-title').textContent = (window.ADMIN_I18N?.t('js.admin.042', [displayPoi(selectedPoi).name])
           ?? `Thông tin ${displayPoi(selectedPoi).name}`);
@@ -348,10 +353,11 @@
 
   function scheduleTranslationRefresh() {
     clearTimeout(translationRefreshTimer);
-    if (disposed || !allPois.some((poi) => targets.some((language) =>
-      ['name', 'description', 'address'].some((field) => poi[field]
+    const pending = (poi) => poi.translationPending !== undefined ? poi.translationPending
+      : targets.some((language) => ['name', 'description', 'address'].some((field) => poi[field]
         && !poi.translations?.[language]?.[`${field}Manual`]
-        && (!poi.translations?.[language]?.[field] || poi.translations[language].stale?.[field]))))) return;
+        && (!poi.translations?.[language]?.[field] || poi.translations[language].stale?.[field])));
+    if (disposed || !allPois.some(pending)) return;
     async function refresh() {
       if (disposed) return;
       const revision = listRevision;
@@ -389,7 +395,11 @@
     if (!selectedPoi) return;
     const poi = displayPoi(selectedPoi);
     const t = poiT;
-    byId('selected-poi-summary').textContent = `${poi.name} · ${categoryLabel(poi.category)} · ${poi.description} · ${poi.address || t('js.admin.039')} · ${t(poi.isActive ? 'js.admin.040' : 'js.admin.041')}`;
+    const status = selectedPoi.translationStatus?.[adminLanguage()]?.description;
+    const note = adminLanguage() !== 'vi' && status && status !== 'ready'
+      ? ` · ${t(status === 'unverified' && selectedPoi.translationFallback?.[adminLanguage()] === false
+        ? 'poi.description.unverified_available' : `poi.description.${status}`)}` : '';
+    byId('selected-poi-summary').textContent = `${poi.name} · ${categoryLabel(poi.category)} · ${poi.description}${note} · ${poi.address || t('js.admin.039')} · ${t(poi.isActive ? 'js.admin.040' : 'js.admin.041')}`;
   }
 
   async function loadContent() {
@@ -471,7 +481,11 @@
       const poi = await requestJson(poiUrl(id), { controller });
       if (disposed || revision !== selectionRevision) return false;
       if (poi?.id !== id || typeof poi.name !== 'string') throw safeError((window.ADMIN_I18N?.t('js.admin.038') ?? 'Thông tin POI không hợp lệ. Hãy tải lại danh sách.'));
-      selectedPoi = { ...poi, translations: allPois.find((entry) => entry.id === id)?.translations || poi.translations };
+      const listed = allPois.find((entry) => entry.id === id);
+      selectedPoi = { ...poi, translations: listed?.translations || poi.translations,
+        resolvedTranslations: listed?.resolvedTranslations || poi.resolvedTranslations,
+        translationStatus: listed?.translationStatus || poi.translationStatus,
+        translationFallback: listed?.translationFallback || poi.translationFallback };
       renderSelectedPoiSummary();
       showLanguage(sourceLanguage);
       mode = 'edit';
@@ -543,15 +557,15 @@
       throw safeError((window.ADMIN_I18N?.t('js.admin.050') ?? 'Đặt ghim và xác nhận vị trí trước khi lưu.'));
     }
     Object.assign(data, location);
-    for (const [field, key, min, max] of [['radius', 'geofenceRadius', 0, Infinity]]) {
-      const input = byId(`poi-${field}`);
-      const value = input.value.trim();
-      const number = /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value) ? Number(value) : NaN;
-      const invalid = !Number.isFinite(number) || number < min || number > max || (key === 'geofenceRadius' && number <= 0);
-      input.setAttribute('aria-invalid', String(invalid));
-      if (invalid) { input.focus(); throw safeError((window.ADMIN_I18N?.t('js.admin.051') ?? 'Bán kính phải là số lớn hơn 0.')); }
-      data[key] = number;
+    const radiusInput = byId('poi-radius');
+    const radius = radiusInput.value.trim();
+    const validRadius = /^[0-9]+$/.test(radius) && Number.isSafeInteger(Number(radius)) && Number(radius) >= 1;
+    radiusInput.setAttribute('aria-invalid', String(!validRadius));
+    if (!validRadius) {
+      radiusInput.focus();
+      throw safeError((window.ADMIN_I18N?.t('js.admin.051') ?? 'Bán kính geofence phải là số nguyên dương lớn hơn hoặc bằng 1 mét.'));
     }
+    data.geofenceRadius = Number(radius);
     return data;
   }
 
@@ -851,6 +865,33 @@ function confirmDeletePoi() {
   });
   byId('reload-pois').addEventListener('click', () => { if (!mutating && !listLoading) loadPois(); });
   byId('poi-form').addEventListener('submit', savePoi);
+  const radiusInput = byId('poi-radius');
+  const radiusError = () => {
+    radiusInput.setAttribute('aria-invalid', 'true');
+    message('action-status', (window.ADMIN_I18N?.t('js.admin.051') ?? 'Bán kính geofence phải là số nguyên dương lớn hơn hoặc bằng 1 mét.'), 'error');
+  };
+  radiusInput.addEventListener('keydown', (event) => {
+    if (['-', '+', '.', ',', 'e', 'E'].includes(event.key) || (event.key === '0' && !radiusInput.value)) {
+      event.preventDefault(); radiusError();
+    }
+  });
+  radiusInput.addEventListener('beforeinput', (event) => {
+    if (event.data && (!/^[0-9]+$/.test(event.data) || (Number(event.data) === 0 && !radiusInput.value))) {
+      event.preventDefault(); radiusError();
+    }
+  });
+  radiusInput.addEventListener('paste', (event) => {
+    const pasted = event.clipboardData?.getData('text') ?? '';
+    if (!/^[0-9]+$/.test(pasted) || !Number.isSafeInteger(Number(pasted)) || Number(pasted) < 1) {
+      event.preventDefault();
+      radiusError();
+    }
+  });
+  radiusInput.addEventListener('input', () => {
+    const value = radiusInput.value.trim();
+    if (!/^[0-9]+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < 1) radiusError();
+    else radiusInput.setAttribute('aria-invalid', 'false');
+  });
   byId('poi-category').addEventListener('input', renderCategoryFormLabel);
   byId('delete-selected').addEventListener('click', () => deletePoi(selectedPoi));
 

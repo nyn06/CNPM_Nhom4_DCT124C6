@@ -20,7 +20,6 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 async function setup(withI18n = false) {
   const elements = Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => [match[1], element()]));
-  elements['voucher-duration'].value = '60';
   elements['voucher-search-duration'].value = 'all';
   elements['voucher-filter'].value = 'all';
   elements['voucher-result'].hidden = true;

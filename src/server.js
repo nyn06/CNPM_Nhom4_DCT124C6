@@ -13,7 +13,8 @@ async function start(env = process.env) {
       const pool = await getPool();
       stage = 'migrations';
       const required = ['001_initial.sql', '004_poi_translations.sql',
-        '005_poi_translation_jobs.sql', '006_remove_legacy_narrations_jobs.sql'];
+        '005_poi_translation_jobs.sql', '006_remove_legacy_narrations_jobs.sql',
+        '007_voucher_purchases.sql'];
       const result = await pool.request().query(`SELECT Version FROM dbo.SchemaMigrations
         WHERE Version IN (${required.map((name) => `'${name}'`).join(', ')})`);
       const applied = new Set(result.recordset.map((row) => row.Version));

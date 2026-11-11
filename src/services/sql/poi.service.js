@@ -82,7 +82,7 @@ class PoiService {
       ...fields,
       updatedAt: new Date().toISOString(),
     });
-    if (['name', 'description', 'address'].some((field) => fields[field] !== existing[field])) {
+    if (['name', 'description', 'address', 'streetAddress'].some((field) => fields[field] !== existing[field])) {
       try { await translationJobs.enqueue(id); } catch {
         console.error('POI updated; translation queue will reconcile later.');
       }
@@ -293,8 +293,8 @@ class PoiService {
       throw error;
     }
 
-    if (!Number.isFinite(poi.geofenceRadius) || poi.geofenceRadius <= 0) {
-      const error = new Error('geofenceRadius phải là số dương hợp lệ');
+    if (!Number.isSafeInteger(poi.geofenceRadius) || poi.geofenceRadius < 1) {
+      const error = new Error('Bán kính geofence phải là số nguyên dương lớn hơn hoặc bằng 1 mét. (geofenceRadius)');
       error.statusCode = 400;
       throw error;
     }

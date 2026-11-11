@@ -1,5 +1,32 @@
 # CNPM_Nhom4_DCT124C6
 
+## Demo vé QR: du khách chọn thời gian
+
+Migration `007_voucher_purchases.sql` cho phép voucher mới chưa có thời hạn và tạo bảng
+`VoucherPayments`. Các voucher cũ vẫn giữ `DurationMinutes` 15/60/120 và tiếp tục dùng
+`POST /api/access/redeem`; dữ liệu cũ không được chuyển đổi. Chạy migration trên database
+đã được sao lưu theo quy trình của dự án trước khi khởi động phiên bản này.
+
+Để demo trên máy phát triển, đặt `NODE_ENV=development` và `DEMO_PAYMENT_ENABLED=true`
+trong môi trường server. Chế độ này luôn bị khóa khi `NODE_ENV=production`. Giá mặc định
+là 15 phút/15.000 ₫, 30 phút/30.000 ₫, 60 phút/60.000 ₫; có thể đặt
+`TOUR_PRICE_15`, `TOUR_PRICE_30`, `TOUR_PRICE_60` thành số nguyên VNĐ dương.
+Đây là xác nhận thanh toán **mô phỏng**, không thu tiền thật.
+
+1. Admin đăng nhập và tạo QR ở mục Quản lý vé QR. QR mới chưa gắn gói.
+2. Du khách quét QR, mở WebApp và chọn 15/30/60 phút. WebApp gọi
+   `/api/access/inspect`, rồi `/api/access/choose`; backend quyết định giá.
+3. Bấm **Thanh toán mô phỏng**. Transaction chuyển sang `paid`, đồng hồ chưa chạy.
+4. Bấm **Bắt đầu tham quan**. `/api/access/start` tạo đúng một `GuestSession`, tính
+   hạn từ thời điểm này và bật luồng GPS, geofence, audio hiện có.
+5. Khi reload link QR, backend trả lại trạng thái giao dịch; session đã bắt đầu được
+   khôi phục bằng access token trong tab đã kích hoạt.
+
+`POST /api/access/redeem` từ chối voucher mới chưa thanh toán. Bảng vé Admin hiển thị
+gói, giá chốt lúc chọn và trạng thái giao dịch; lịch sử kích hoạt cũ vẫn dựa trên
+`GuestSessions`. Bảng `VoucherPayments` có một giao dịch cho mỗi voucher, và transaction
+SQL Server khóa voucher khi chọn gói, thanh toán mô phỏng hoặc bắt đầu phiên.
+
 ## Mã kích hoạt vé QR
 
 Đặt `ACTIVATION_CODE_SECRET` trong `.env` thành một giá trị ngẫu nhiên riêng tư, ổn định, dài ít nhất 32 ký tự (ví dụ sinh 32 byte bằng `crypto.randomBytes(32).toString('hex')`). Giữ cùng giá trị trên mọi instance; đổi khóa sẽ khiến mã ngắn của vé chưa dùng không tra cứu được. Không đưa khóa vào Git.

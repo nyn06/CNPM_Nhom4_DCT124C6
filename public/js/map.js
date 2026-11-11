@@ -21,11 +21,21 @@
   let statusKey = null;
 
   function status(message, tone = 'neutral') {
-    statusKey = Object.keys(window.TOUR_TRANSLATIONS?.vi || {}).find((key) => t(key) === message) || null;
-    byId('map-status').textContent = message;
+    const dictionaries = window.TOUR_TRANSLATIONS || {};
+    const source = dictionaries.vi || {};
+
+    statusKey = Object.keys(source).find(
+      (key) => key === message ||
+        Object.values(dictionaries).some(
+          (dictionary) => dictionary?.[key] === message
+        )
+    ) || null;
+
+    byId('map-status').textContent =
+      statusKey ? t(statusKey) : message;
+
     byId('map-status').dataset.tone = tone;
   }
-
   function validPoint(point) {
     return Number.isFinite(point?.latitude) && point.latitude >= -90 && point.latitude <= 90
       && Number.isFinite(point?.longitude) && point.longitude >= -180 && point.longitude <= 180;
@@ -38,7 +48,15 @@
     content.append(title);
     if (poi.description) {
       const description = document.createElement('p');
-      description.textContent = poi.description.slice(0, 180);
+      const language = document.getElementById('language')?.value || 'vi';
+      const state = poi.translationStatus?.[language]?.description;
+      const key = { missing: 'poiDescriptionFallbackMissing', pending: 'poiDescriptionFallbackPending',
+        processing: 'poiDescriptionFallbackPending', failed: 'poiDescriptionFallbackFailed',
+        rejected: 'poiDescriptionFallbackRejected',
+        unverified: poi.translationFallback?.[language] === false
+          ? 'poiDescriptionUnverified' : 'poiDescriptionFallbackUnverified' }[state];
+      description.textContent = [poi.description.slice(0, 180), language !== 'vi' && key ? t(key) : '']
+        .filter(Boolean).join(' ');
       content.append(description);
     }
     if (location) {
@@ -153,6 +171,8 @@
       && Number.isFinite(poi.geofenceRadius) && poi.geofenceRadius > 0
       && typeof poi.name === 'string').map((poi) => ({
       id: poi.id, name: poi.name, description: typeof poi.description === 'string' ? poi.description : '',
+      translationStatus: poi.translationStatus,
+      translationFallback: poi.translationFallback,
       latitude: poi.latitude, longitude: poi.longitude, geofenceRadius: poi.geofenceRadius,
     })) : [];
     renderPois();
@@ -193,6 +213,7 @@
   function refreshLanguage() {
     if (statusKey) byId('map-status').textContent = t(statusKey);
     if (map && location) renderLocation();
+    if (map) updatePopups();
   }
 
   byId('map-recenter').addEventListener('click', () => {

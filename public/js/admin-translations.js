@@ -1,5 +1,12 @@
 window.ADMIN_TRANSLATIONS = {
   "vi": {
+    "poi.description.missing": "Chưa có bản dịch mô tả; đang hiển thị tiếng Việt.",
+    "poi.description.pending": "Đang dịch mô tả; đang hiển thị tiếng Việt.",
+    "poi.description.processing": "Đang dịch mô tả; đang hiển thị tiếng Việt.",
+    "poi.description.failed": "Dịch mô tả thất bại; đang hiển thị tiếng Việt.",
+    "poi.description.rejected": "Bản dịch mô tả không đạt chất lượng; đang hiển thị tiếng Việt.",
+    "poi.description.unverified": "Chưa xác minh được bản dịch mô tả; đang hiển thị tiếng Việt.",
+    "poi.description.unverified_available": "Bản dịch mô tả chưa được xác minh đầy đủ.",
     "poi.category.food": "Món ăn", "poi.category.drink": "Đồ uống", "poi.category.dessert": "Tráng miệng",
     "html.admin.001": "Đóng menu",
     "html.admin.002": "Điều hướng quản trị",
@@ -206,7 +213,7 @@ window.ADMIN_TRANSLATIONS = {
     "js.admin.048": "Đang thêm địa điểm mới.",
     "js.admin.049": "Tên, mô tả và loại địa điểm không được để trống.",
     "js.admin.050": "Đặt ghim và xác nhận vị trí trước khi lưu.",
-    "js.admin.051": "Bán kính phải là số lớn hơn 0.",
+    "js.admin.051": "Bán kính geofence phải là số nguyên dương lớn hơn hoặc bằng 1 mét.",
     "js.admin.052": "Chưa hoàn tất thao tác. Hãy tải lại và thử lại.",
     "js.admin.053": "Đang lưu thay đổi…",
     "js.admin.054": "Đang tạo địa điểm…",
@@ -414,6 +421,13 @@ window.ADMIN_TRANSLATIONS = {
     "html.admin.189": "TIẾP TỤC"
   },
   "en": {
+    "poi.description.missing": "Description translation is unavailable; showing Vietnamese.",
+    "poi.description.pending": "Description is being translated; showing Vietnamese.",
+    "poi.description.processing": "Description is being translated; showing Vietnamese.",
+    "poi.description.failed": "Description translation failed; showing Vietnamese.",
+    "poi.description.rejected": "Description translation did not pass quality checks; showing Vietnamese.",
+    "poi.description.unverified": "Description translation could not be verified; showing Vietnamese.",
+    "poi.description.unverified_available": "Description translation has not been fully verified.",
     "poi.category.food": "Food", "poi.category.drink": "Drinks", "poi.category.dessert": "Dessert",
     "html.admin.001": "Close menu",
     "html.admin.002": "Admin navigation",
@@ -620,7 +634,7 @@ window.ADMIN_TRANSLATIONS = {
     "js.admin.048": "Adding new location.",
     "js.admin.049": "Names, descriptions and types of locations are not to be left empty.",
     "js.admin.050": "Set the pin and confirm location before saving.",
-    "js.admin.051": "The radius must be greater than 0.",
+    "js.admin.051": "The geofence radius must be a positive integer of at least 1 meter.",
     "js.admin.052": "Operation not completed. Please download and try again.",
     "js.admin.053": "Saving changes...",
     "js.admin.054": "Creating Location...",
@@ -828,6 +842,13 @@ window.ADMIN_TRANSLATIONS = {
     "html.admin.189": "CONTINUE"
   },
   "ja": {
+    "poi.description.missing": "説明の翻訳はまだありません。ベトナム語を表示しています。",
+    "poi.description.pending": "説明を翻訳中です。ベトナム語を表示しています。",
+    "poi.description.processing": "説明を翻訳中です。ベトナム語を表示しています。",
+    "poi.description.failed": "説明の翻訳に失敗しました。ベトナム語を表示しています。",
+    "poi.description.rejected": "説明の翻訳は品質確認に通りませんでした。ベトナム語を表示しています。",
+    "poi.description.unverified": "説明の翻訳を確認できませんでした。ベトナム語を表示しています。",
+    "poi.description.unverified_available": "説明の翻訳はまだ十分に確認されていません。",
     "poi.category.food": "料理", "poi.category.drink": "飲み物", "poi.category.dessert": "デザート",
     "html.admin.001": "メニューを閉じる",
     "html.admin.002": "管理者ナビゲーション",
@@ -1242,6 +1263,13 @@ window.ADMIN_TRANSLATIONS = {
     "html.admin.189": "続行"
   },
   "ko": {
+    "poi.description.missing": "설명 번역이 없습니다. 베트남어를 표시합니다.",
+    "poi.description.pending": "설명을 번역하는 중입니다. 베트남어를 표시합니다.",
+    "poi.description.processing": "설명을 번역하는 중입니다. 베트남어를 표시합니다.",
+    "poi.description.failed": "설명 번역에 실패했습니다. 베트남어를 표시합니다.",
+    "poi.description.rejected": "설명 번역이 품질 검사를 통과하지 못했습니다. 베트남어를 표시합니다.",
+    "poi.description.unverified": "설명 번역을 확인할 수 없습니다. 베트남어를 표시합니다.",
+    "poi.description.unverified_available": "설명 번역은 아직 충분히 검증되지 않았습니다.",
     "poi.category.food": "음식", "poi.category.drink": "음료", "poi.category.dessert": "디저트",
     "html.admin.001": "메뉴 닫기",
     "html.admin.002": "관리자 탐색",

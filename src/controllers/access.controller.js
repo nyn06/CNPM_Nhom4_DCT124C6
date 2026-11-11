@@ -1,6 +1,7 @@
 const QRCode = require('qrcode');
 const accessService = require('../services/access.service');
 const managementService = require('../services/voucher-management.service');
+const purchaseService = require('../services/purchase.service');
 
 class AccessController {
   async createVoucher(req, res, next) {
@@ -28,6 +29,20 @@ class AccessController {
 
   async redeem(req, res, next) {
     try { res.json(await accessService.redeem(req.body)); } catch (error) { next(error); }
+  }
+
+  packages(req, res) { res.json(purchaseService.packages()); }
+  async inspect(req, res, next) {
+    try { res.json(await purchaseService.inspect(req.body)); } catch (error) { next(error); }
+  }
+  async choose(req, res, next) {
+    try { res.json(await purchaseService.choose(req.body)); } catch (error) { next(error); }
+  }
+  async demoPay(req, res, next) {
+    try { res.json(await purchaseService.pay(req.body)); } catch (error) { next(error); }
+  }
+  async start(req, res, next) {
+    try { res.json(await purchaseService.start(req.body)); } catch (error) { next(error); }
   }
 
   getSession(req, res) {

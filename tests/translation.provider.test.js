@@ -56,7 +56,7 @@ it.each([
   expect(global.fetch).not.toHaveBeenCalled();
 });
 
-it.each([[401, 503], [403, 503], [400, 502], [429, 502], [500, 502], [302, 502]])(
+it.each([[401, 503], [403, 503], [400, 502], [429, 503], [500, 502], [302, 502]])(
   'HTTP %s thành lỗi %s không đọc/echo body nhà cung cấp', async (status, expected) => {
     const json = jest.fn(async () => ({ error: 'SECRET-provider-body' }));
     global.fetch.mockResolvedValue({ ok: false, status, json });
@@ -67,6 +67,13 @@ it.each([[401, 503], [403, 503], [400, 502], [429, 502], [500, 502], [302, 502]]
     expect(jest.getTimerCount()).toBe(0);
   }
 );
+
+it('phân biệt hạn mức và lỗi xác thực để worker chọn chính sách retry', async () => {
+  global.fetch.mockResolvedValueOnce({ ok: false, status: 429 });
+  await expect(translate()).rejects.toMatchObject({ code: 'PROVIDER_RATE_LIMIT', statusCode: 503 });
+  global.fetch.mockResolvedValueOnce({ ok: false, status: 401 });
+  await expect(translate()).rejects.toMatchObject({ code: 'PROVIDER_AUTH', statusCode: 503 });
+});
 
 it.each([null, {}, { translatedText: '' }, { translatedText: '   ' }, { translatedText: 1 }, { translatedText: ['text'] }])(
   'response không hợp lệ %j trả 502', async (data) => {

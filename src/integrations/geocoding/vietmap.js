@@ -95,7 +95,7 @@ async function suggest({ streetAddress, ward, city }) {
   const raw = await provider('/api/autocomplete/v4', { text: query, display_type: '5' }, 'suggest');
   if (!Array.isArray(raw)) throw failure('GEOCODE_INVALID_RESPONSE', 503, 'Phản hồi địa chỉ không hợp lệ.');
   const items = raw.filter((row) => row && typeof row.ref_id === 'string'
-    && /^(auto|geocode):[A-Za-z0-9_-]{1,500}$/.test(row.ref_id)
+    && row.ref_id.length <= 500 && /^(?:auto|geocode|vm):[A-Za-z0-9_:-]+$/.test(row.ref_id)
     && typeof row.display === 'string' && row.display.trim()).slice(0, 6).map((row) => {
     const id = crypto.randomUUID();
     places.set(id, { refId: row.ref_id, name: row.name, expires: Date.now() + ttl });

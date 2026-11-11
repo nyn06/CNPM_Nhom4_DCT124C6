@@ -7,6 +7,8 @@ const service = require('./poi-translation.service');
 const fields = ['name', 'description', 'address'];
 const languages = ['en', 'ja', 'ko'];
 const hash = (value) => createHash('sha256').update(value || '', 'utf8').digest('hex');
+const matchesSource = (poi, row, field) => row?.[`${field}SourceHash`] === hash(poi[field])
+  || field === 'description' && row?.descriptionSourceHash === hash(`unverified:${poi.description || ''}`);
 let timer;
 let active;
 let lastQueueError;
@@ -36,7 +38,7 @@ async function reconcile() {
     const needed = languages.some((language) => {
       const row = rows.find((entry) => entry.poiId === poi.id && entry.language === language);
       return fields.some((field) => poi[field] && !row?.[`${field}Manual`]
-        && (!row?.[field] || row[`${field}SourceHash`] !== hash(poi[field])));
+        && (!row?.[field] || !matchesSource(poi, row, field)));
     });
     if (needed) await jobs.enqueue(poi.id, true);
   }
@@ -46,13 +48,20 @@ async function runOnce() {
   const job = await jobs.claim();
   if (!job) return false;
   try {
-    await service.translate(job.poiId);
+    let failure = null;
+    for (const language of languages) {
+      try { await service.translate(job.poiId, { targetLanguages: [language] }); }
+      catch (error) { failure ||= error; }
+    }
+    if (failure) throw failure;
     await jobs.complete(job);
   } catch (error) {
-    const code = error?.code === 'UNTRUSTED_TRANSLATION' ? 'UNTRUSTED_TRANSLATION'
+    const code = ['UNTRUSTED_TRANSLATION', 'UNVERIFIED_TRANSLATION', 'PROVIDER_AUTH',
+      'PROVIDER_RATE_LIMIT', 'PROVIDER_HTTP_ERROR', 'PROVIDER_INVALID_RESPONSE',
+      'PROVIDER_NETWORK', 'PROVIDER_TIMEOUT'].includes(error?.code) ? error.code
       : error?.statusCode === 503 ? 'PROVIDER_UNAVAILABLE'
-      : error?.statusCode === 504 ? 'PROVIDER_TIMEOUT'
-        : error?.statusCode === 409 ? 'SOURCE_CHANGED' : 'TRANSLATION_FAILED';
+        : error?.statusCode === 504 ? 'PROVIDER_TIMEOUT'
+          : error?.statusCode === 409 ? 'SOURCE_CHANGED' : 'TRANSLATION_FAILED';
     await jobs.fail(job, code);
   }
   return true;
