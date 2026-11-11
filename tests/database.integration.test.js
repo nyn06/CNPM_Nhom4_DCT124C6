@@ -30,9 +30,13 @@ beforeAll(async () => {
     (SELECT COUNT(*) FROM dbo.GuestSessions) AS sessions,
     (SELECT COUNT(*) FROM dbo.VoucherPayments) AS payments`);
   const status = state.recordset[0];
-  if (status.migrationCount !== 1 || !status.paymentsTable || status.mainState !== 'ONLINE'
-    || status.testState !== 'ONLINE' || status.vouchers !== 59 || status.sessions !== 44 || status.payments !== 0)
-    throw new Error('SQL integration baseline does not match the approved AutoNarrationDBTest snapshot');
+  const emptyBaseline = process.env.DB_INTEGRATION_BASELINE === 'empty';
+  const expectedBaseline = emptyBaseline
+    ? { mainState: null, vouchers: 0, sessions: 0, payments: 0 }
+    : { mainState: 'ONLINE', vouchers: 59, sessions: 44, payments: 0 };
+  if (status.migrationCount !== 1 || !status.paymentsTable || status.testState !== 'ONLINE'
+    || Object.entries(expectedBaseline).some(([key, value]) => status[key] !== value))
+    throw new Error(`SQL integration baseline does not match the approved AutoNarrationDBTest ${emptyBaseline ? 'empty CI database' : 'snapshot'}`);
   if (process.env.DEMO_PAYMENT_ENABLED !== 'true')
     throw new Error('SQL integration demo payment requires DEMO_PAYMENT_ENABLED=true');
 });
