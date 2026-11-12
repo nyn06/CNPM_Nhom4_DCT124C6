@@ -43,6 +43,22 @@
 
   function popup(poi) {
     const content = document.createElement('div');
+
+    if (poi.imageUrl) {
+      const image = document.createElement('img');
+      image.src = poi.imageUrl;
+      image.alt = poi.name;
+      image.loading = 'lazy';
+      image.style.width = '100%';
+      image.style.maxWidth = '260px';
+      image.style.height = '160px';
+      image.style.objectFit = 'cover';
+      image.style.borderRadius = '8px';
+      image.style.display = 'block';
+      image.style.marginBottom = '10px';
+      content.append(image);
+    }
+
     const title = document.createElement('strong');
     title.textContent = poi.name;
     content.append(title);
@@ -171,6 +187,11 @@
       && Number.isFinite(poi.geofenceRadius) && poi.geofenceRadius > 0
       && typeof poi.name === 'string').map((poi) => ({
       id: poi.id, name: poi.name, description: typeof poi.description === 'string' ? poi.description : '',
+
+      imageUrl: typeof poi.imageUrl === 'string' &&
+        /^\/uploads\/pois\/[a-zA-Z0-9_-]+\.(jpg|jpeg|png|webp)$/.test(poi.imageUrl)
+          ? poi.imageUrl : null,
+
       translationStatus: poi.translationStatus,
       translationFallback: poi.translationFallback,
       latitude: poi.latitude, longitude: poi.longitude, geofenceRadius: poi.geofenceRadius,

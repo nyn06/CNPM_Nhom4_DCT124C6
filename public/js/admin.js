@@ -124,6 +124,135 @@
   }
 
   const poiUrl = (id) => `/api/pois/${encodeURIComponent(id)}`;
+
+  function renderPoiImage() {
+    const section = byId('poi-image-section');
+    const previewContainer = byId('poi-image-preview-container');
+    const preview = byId('poi-image-preview');
+    const empty = byId('poi-image-empty');
+    const fileInput = byId('poi-image-file');
+
+    const isEditing = mode === 'edit' && !!selectedPoi;
+
+    section.hidden = !isEditing;
+    fileInput.value = '';
+    message('poi-image-status', '');
+
+    const imageUrl = isEditing ? selectedPoi.imageUrl : null;
+    const validImageUrl =
+      typeof imageUrl === 'string' &&
+      /^\/uploads\/pois\/[a-zA-Z0-9_-]+\.(jpg|jpeg|png|webp)$/.test(imageUrl);
+
+    if (validImageUrl) {
+      preview.src = imageUrl;
+      previewContainer.hidden = false;
+      empty.hidden = true;
+    } else {
+      preview.removeAttribute('src');
+      previewContainer.hidden = true;
+      empty.hidden = false;
+    }
+  }
+
+  async function uploadPoiImage() {
+    if (mutating || selectionLoading || mode !== 'edit' || !selectedPoi) return;
+
+    const fileInput = byId('poi-image-file');
+    const uploadButton = byId('poi-image-upload');
+    const file = fileInput.files?.[0];
+
+    if (!file) {
+      message('poi-image-status', 'Vui lòng chọn hình ảnh trước khi tải lên.', 'error');
+      return;
+    }
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
+    if (!allowedTypes.includes(file.type)) {
+      message('poi-image-status', 'Chỉ chấp nhận ảnh JPG, PNG hoặc WebP.', 'error');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024 || file.size === 0) {
+      message('poi-image-status', 'Dung lượng ảnh phải lớn hơn 0 và không vượt quá 5 MB.', 'error');
+      return;
+    }
+
+    const poiId = selectedPoi.id;
+    const formData = new FormData();
+    formData.append('image', file);
+
+    const controller = new AbortController();
+    controllers.add(controller);
+    const timer = setTimeout(() => controller.abort(), 30000);
+
+    uploadButton.disabled = true;
+    fileInput.disabled = true;
+    message('poi-image-status', 'Đang tải hình ảnh lên server...');
+
+    try {
+      const response = await fetch(
+        `${poiUrl(poiId)}/image`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: {
+            Accept: 'application/json',
+            ...auth.headers('POST')
+          },
+          body: formData
+        }
+      );
+
+      auth.handle(response);
+
+      if (!response.ok) {
+        throw apiError(response.status);
+      }
+
+      const result = await response.json();
+
+      if (
+        result.poiId !== poiId ||
+        typeof result.imageUrl !== 'string' ||
+        !/^\/uploads\/pois\/[a-zA-Z0-9_-]+\.(jpg|jpeg|png|webp)$/.test(result.imageUrl)
+      ) {
+        throw safeError('Server trả về đường dẫn hình ảnh không hợp lệ.');
+      }
+
+      if (selectedPoi?.id !== poiId || mode !== 'edit' || disposed) return;
+
+      selectedPoi = {
+        ...selectedPoi,
+        imageUrl: result.imageUrl
+      };
+
+      renderPoiImage();
+      message('poi-image-status', 'Tải hình ảnh POI thành công.', 'success');
+
+    } catch (error) {
+      if (selectedPoi?.id === poiId && !disposed) {
+        message(
+          'poi-image-status',
+          error.safe
+            ? error.message
+            : controller.signal.aborted
+              ? 'Tải ảnh quá thời gian chờ. Hãy kiểm tra lại trước khi thử tiếp.'
+              : 'Không thể tải hình ảnh lên server. Vui lòng thử lại.',
+          'error'
+        );
+      }
+    } finally {
+      clearTimeout(timer);
+      controllers.delete(controller);
+      uploadButton.disabled = false;
+      fileInput.disabled = false;
+    }
+  }
+
+
   const hasText = (language) => typeof narrations[language]?.text === 'string' && !!narrations[language].text.trim();
   const validAudioUrl = (url) => typeof url === 'string' && /^\/audio\/[a-zA-Z0-9_-]+\.wav$/.test(url);
   const viDirty = () => byId('vi-text').value.trim() !== (narrations[sourceLanguage]?.text || '').trim();
@@ -206,6 +335,7 @@
     narrations = {};
     activeLanguage = sourceLanguage;
     mode = 'idle';
+    renderPoiImage();
     selectionLoading = false;
     contentLoading = false;
     contentReady = false;
@@ -490,6 +620,7 @@
       showLanguage(sourceLanguage);
       mode = 'edit';
       fillPoiForm(poi);
+      renderPoiImage();
       byId('poi-form-title').textContent = (window.ADMIN_I18N?.t('js.admin.042', [displayPoi(poi).name]) ?? `Thông tin ${poi.name}`);
       byId('selected-id').textContent = `POI: ${poi.id}`;
       byId('save-poi').textContent = (window.ADMIN_I18N?.t('js.admin.043') ?? 'Lưu thay đổi');
@@ -525,6 +656,7 @@
     mode = 'new';
     byId('selected-poi-summary').textContent = '';
     fillPoiForm({ category: 'Món ăn', geofenceRadius: 50, isActive: true });
+    renderPoiImage();
     byId('poi-form-title').textContent = (window.ADMIN_I18N?.t('js.admin.045') ?? 'Thêm địa điểm mới');
     byId('selected-id').textContent = (window.ADMIN_I18N?.t('js.admin.046') ?? 'Lưu địa điểm để bắt đầu chuẩn bị thuyết minh.');
     byId('save-poi').textContent = (window.ADMIN_I18N?.t('js.admin.047') ?? 'Tạo địa điểm');
@@ -865,6 +997,7 @@ function confirmDeletePoi() {
   });
   byId('reload-pois').addEventListener('click', () => { if (!mutating && !listLoading) loadPois(); });
   byId('poi-form').addEventListener('submit', savePoi);
+  byId('poi-image-upload').addEventListener('click', uploadPoiImage);
   const radiusInput = byId('poi-radius');
   const radiusError = () => {
     radiusInput.setAttribute('aria-invalid', 'true');

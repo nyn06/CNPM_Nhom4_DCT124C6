@@ -325,6 +325,27 @@ class PoiService {
       throw error;
     }
 
+
+    // Kiem tra duong dan anh cua POI.
+    const imageUrl = poi.imageUrl == null ? null : poi.imageUrl;
+
+    if (
+      imageUrl !== null &&
+      (
+        typeof imageUrl !== 'string' ||
+        imageUrl.length > 500 ||
+        (
+          imageUrl.trim() !== '' &&
+          !/^\/uploads\/pois\/[a-zA-Z0-9_-]+\.(?:jpg|jpeg|png|webp)$/.test(imageUrl.trim())
+        )
+      )
+    ) {
+      const error = new Error('imageUrl phai la duong dan anh POI hop le, toi da 500 ky tu');
+      error.statusCode = 400;
+      throw error;
+    }
+
+
     return {
       name: poi.name.trim(),
       description: poi.description.trim(),
@@ -333,6 +354,7 @@ class PoiService {
       streetAddress: poi.streetAddress?.trim() || null,
       ward: poi.ward?.trim() || null,
       city: poi.city?.trim() || null,
+      imageUrl: imageUrl ? imageUrl.trim() || null : null,
       latitude: poi.latitude,
       longitude: poi.longitude,
       geofenceRadius: poi.geofenceRadius,

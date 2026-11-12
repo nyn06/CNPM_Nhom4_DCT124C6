@@ -2,6 +2,7 @@ const express = require('express');
 const poiController = require('../controllers/poi.controller');
 const { requireAdmin, requireRoles } = require('../middlewares/requireAdmin');
 const csrf = require('../middlewares/csrf');
+const uploadPoiImage = require('../middlewares/uploadPoiImage');
 const { narrationAccess } = require('../middlewares/requireAccess');
 
 const router = express.Router();
@@ -10,6 +11,18 @@ const manage = [requireAdmin, requireRoles('ADMIN', 'POI_MANAGER'), csrf()];
 router.get('/admin/pois', ...manage, poiController.getAdminPois);
 router.get('/admin/pois/:id', ...manage, poiController.getAdminPoi);
 router.post('/pois', ...manage, poiController.createPoi);
+
+
+router.post(
+  '/pois/:id/image',
+  requireAdmin,
+  requireRoles('ADMIN', 'POI_MANAGER'),
+  csrf(false, true),
+  uploadPoiImage,
+  poiController.uploadPoiImage
+);
+
+
 router.get('/pois', poiController.getPois);
 // Route cố định phải đứng trước /pois/:id.
 router.get('/pois/nearby', poiController.getNearbyPois);
