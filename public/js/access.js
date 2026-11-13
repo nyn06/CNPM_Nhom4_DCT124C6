@@ -125,7 +125,7 @@
     if (!/^(?:[a-f0-9]{64}|[A-Za-z0-9]{7})$/.test(code)) { message(t('invalidTicket'), 'error'); return; }
     busy = true;
     byId('activate-voucher').disabled = true;
-    message('Đang kiểm tra mã vé…');
+    message(t('checkingVoucher'));
     try {
       const state = await request('/api/access/inspect', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -156,38 +156,115 @@
   }
 
   let purchaseCode = null;
-  function renderPurchase(state) {
-    const panel = byId('purchase-panel');
-    panel.hidden = false;
-    const used = state.status === 'active' || state.status === 'expired';
-    byId('purchase-options').replaceChildren();
-    const selected = state.payment?.durationMinutes || 15;
-    for (const item of state.packages) {
+  let selectedDuration = null;
+  let purchaseStep = 'choose';
+  let purchaseState = null;
+function renderPurchase(state) {
+  purchaseState = state;
+  const panel = byId('purchase-panel');
+  const options = byId('purchase-options');
+  const payButton = byId('purchase-pay');
+  const startButton = byId('purchase-start');
+
+  panel.hidden = false;
+  options.replaceChildren();
+  options.hidden = false;
+byId('purchase-summary').textContent = '';
+
+  const used = state.status === 'active' || state.status === 'expired';
+  const payment = state.payment;
+  const paid = payment?.status === 'paid';
+  const hasPayment = !!payment;
+
+  if (!hasPayment && !used) {
+    purchaseStep = 'choose';
+
+    (state.packages || []).forEach((pkg) => {
+      const duration = Number(pkg.durationMinutes);
+      const amount = Number(
+        pkg.amountVnd ?? pkg.priceVnd ?? pkg.price
+      );
+
+      if (![15, 30, 60].includes(duration)) return;
+
       const label = document.createElement('label');
       label.className = 'purchase-option';
-      const input = document.createElement('input');
-      input.type = 'radio'; input.name = 'tour-package'; input.value = String(item.durationMinutes);
-      input.checked = item.durationMinutes === selected;
-      const caption = document.createElement('span');
-      caption.textContent = `${item.durationMinutes} phút · ${item.amountVnd.toLocaleString('vi-VN')} ₫`;
-      label.append(input, caption);
-      byId('purchase-options').append(label);
-    }
-    const paid = state.payment?.status === 'paid';
-    byId('purchase-options').hidden = paid || used;
-    byId('purchase-choose').hidden = paid || used;
-    byId('purchase-pay').hidden = !state.payment || paid || !state.demoEnabled;
-    byId('purchase-start').hidden = !paid || used;
-    byId('purchase-heading').textContent = state.status === 'expired' ? 'Vé đã hết hạn'
-      : state.status === 'active' ? 'Vé đã kích hoạt'
-      : paid ? 'Thanh toán mô phỏng thành công' : state.payment ? 'Xác nhận thanh toán' : 'Chọn thời gian tham quan';
-    byId('purchase-summary').textContent = state.status === 'expired' ? 'Phiên tham quan đã hết hạn. Hãy dùng mã vé khác.'
-      : state.status === 'active' ? 'Vé đã bắt đầu. Mở lại trên thiết bị đã kích hoạt để tiếp tục.'
-      : state.payment ? `Giao dịch ${state.payment.id} · ${state.payment.durationMinutes} phút · ${state.payment.amountVnd.toLocaleString('vi-VN')} ₫ · ${paid ? 'Đã thanh toán, chưa kích hoạt' : 'Chờ thanh toán'}`
-        : 'Thời gian sử dụng do bạn chọn. Đồng hồ chưa bắt đầu.';
-    if (state.payment && !paid && !state.demoEnabled) message('Thanh toán mô phỏng chưa được bật trên máy chủ này.', 'error');
-    else message(paid ? 'Đã thanh toán mô phỏng. Bấm Bắt đầu tham quan khi bạn sẵn sàng.' : 'Chọn gói để tiếp tục.', 'success');
+
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'tour-duration';
+      radio.value = String(duration);
+      radio.checked = selectedDuration === duration;
+
+      radio.addEventListener('change', () => {
+        selectedDuration = duration;
+        payButton.disabled = false;
+      });
+
+      const details = document.createElement('span');
+      details.className = 'purchase-option-details';
+      details.textContent = t('purchaseMinutes').replace('{minutes}', duration);
+
+      const price = document.createElement('span');
+      price.className = 'purchase-option-price';
+      price.textContent = Number.isFinite(amount)
+        ? `${amount.toLocaleString('vi-VN')} ₫`
+        : '';
+
+      label.append(radio, details, price);
+      options.appendChild(label);
+    });
+
+    payButton.textContent = t('purchasePay');
+    payButton.hidden = false;
+    payButton.disabled = ![15, 30, 60].includes(selectedDuration);
+
+    startButton.hidden = true;
+
+  } else if (hasPayment && !paid && !used) {
+    purchaseStep = 'pay';
+
+    options.hidden = true;
+
+    const amount = Number(
+      payment.amountVnd ?? payment.priceVnd ?? payment.amount
+    );
+
+    const duration = payment.durationMinutes || selectedDuration || '';
+
+    byId('purchase-summary').className = 'purchase-highlight';
+    byId('purchase-summary').textContent =
+      t('purchaseSelectedPackage')
+        .replace('{minutes}', duration) +
+      (Number.isFinite(amount)
+        ? ` — ${amount.toLocaleString(
+            byId('language')?.value || 'vi'
+          )} ₫`
+        : '');
+
+    payButton.textContent = t('purchaseConfirm');
+    payButton.hidden = !state.demoEnabled;
+    payButton.disabled = false;
+
+    startButton.hidden = true;
+
+  } else if (paid && !used) {
+    purchaseStep = 'complete';
+
+    options.hidden = true;
+    payButton.hidden = true;
+    startButton.hidden = false;
+
+    byId('purchase-summary').className = 'purchase-highlight purchase-success';
+    byId('purchase-summary').textContent =
+      `✓ ${t('purchasePaidMessage')}`;  } else {
+    purchaseStep = 'complete';
+
+    options.hidden = true;
+    payButton.hidden = true;
+    startButton.hidden = true;
   }
+}
   async function purchaseAction(path, payload = {}) {
     if (busy || disposed || !purchaseCode) return;
     busy = true;
@@ -206,18 +283,35 @@
         const url = new URL(window.location.href);
         url.searchParams.delete('voucher');
         window.history.replaceState(null, '', url.pathname + url.search + url.hash);
-      } else renderPurchase(data);
+      } else {
+        if (path === 'choose') {
+          selectedDuration = null;
+        }
+        renderPurchase(data);
+      }
     } catch (error) { if (!disposed) message(error.message, 'error'); }
     finally { busy = false; }
   }
-  byId('purchase-choose').addEventListener('click', () => {
-    const selected = byId('purchase-options').children.find?.((label) => label.children[0].checked);
-    const minutes = Number(selected?.children[0].value || byId('purchase-options').querySelector('input:checked')?.value);
-    purchaseAction('choose', { durationMinutes: minutes });
-  });
-  byId('purchase-pay').addEventListener('click', () => purchaseAction('demo-pay'));
-  byId('purchase-start').addEventListener('click', () => purchaseAction('start'));
+    
+  byId('purchase-pay').addEventListener('click', () => {
+  if (purchaseStep === 'choose') {
+    if (![15, 30, 60].includes(selectedDuration)) {
+      message(t('purchaseChooseMessage'), 'error');
+      return;
+    }
 
+    purchaseAction('choose', {
+      durationMinutes: selectedDuration
+    });
+
+  } else if (purchaseStep === 'pay') {
+    purchaseAction('demo-pay');
+  }
+});
+
+  byId('purchase-start').addEventListener('click', () => {
+    purchaseAction('start');
+  });
   async function checkSession(savedToken = token) {
     if (!savedToken || busy || disposed) return;
     busy = true;
@@ -237,9 +331,24 @@
       byId('access-status').textContent = active()
         ? t('ticketActivatedStatus').replace('{minutes}', ticketMinutes)
         : t(accessState === 'initial' ? 'accessStatus' : 'noValidSession');
-      if (ticketExpiry) byId('access-expiry').textContent = new Date(ticketExpiry).toLocaleString(byId('language').value);
-      if (messageKey) byId('access-message').textContent = t(messageKey);
-      if (!qrCameraPanel.hidden) qrCameraMessage.textContent = t(cameraMessageKey);
+
+      if (ticketExpiry) {
+        byId('access-expiry').textContent =
+          new Date(ticketExpiry).toLocaleString(byId('language').value);
+      }
+
+      if (messageKey) {
+        byId('access-message').textContent = t(messageKey);
+      }
+
+      if (!qrCameraPanel.hidden) {
+        qrCameraMessage.textContent = t(cameraMessageKey);
+      }
+
+      // Cập nhật lại nội dung thanh toán theo ngôn ngữ mới.
+      if (purchaseState && !byId('purchase-panel').hidden) {
+        renderPurchase(purchaseState);
+      }
     },
     subscribe: (listener) => { listeners.add(listener); listener(active()); },
   };
