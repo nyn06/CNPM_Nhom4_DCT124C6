@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Demo BE 3-layer + CI/CD cho đồ án Thuyết minh tự động đa ngôn ngữ",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
