@@ -334,15 +334,130 @@ input[aria-invalid="true"] { border-color: #b93d31; }
 #poi-search-result {
   scroll-margin-top: 100px;
 }
-.purchase-panel { margin-top: 1.25rem; padding: 1.25rem; border: 1px solid #f2c8a5; border-radius: 16px; background: #fff9f3; }
-.purchase-panel h3 { margin: 0 0 .5rem; color: #9b4109; }
-.purchase-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin: 1rem 0; }
-.purchase-option { display: flex; gap: .5rem; align-items: center; padding: .9rem; border: 1px solid #e8b78e; border-radius: 12px; background: white; cursor: pointer; }
-.purchase-option:has(input:checked) { border-color: #df6b19; box-shadow: 0 0 0 2px #df6b1933; }
-.purchase-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
-@media (max-width: 620px) { .purchase-options { grid-template-columns: 1fr; } .purchase-actions .button { width: 100%; } }
+/* ===== PURCHASE / CHECKOUT ===== */
+.purchase-panel {
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffefa;
+}
 
+.purchase-panel h3 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 700;
+}
 
+.purchase-options {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 9px;
+  margin: 16px 0;
+}
+
+.purchase-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffefa;
+  cursor: pointer;
+  transition: .15s ease;
+}
+
+.purchase-option:hover {
+  border-color: #a9bdaa;
+  background: #f8faf5;
+}
+
+.purchase-option:has(input:checked) {
+  border-color: var(--green);
+  background: var(--mint);
+}
+
+.purchase-option input {
+  width: 17px;
+  height: 17px;
+  min-height: 17px;
+  flex: 0 0 17px;
+  margin: 0;
+  accent-color: var(--green);
+}
+
+.purchase-option-details {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.purchase-option-price {
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.purchase-actions {
+  display: flex;
+  margin-top: 16px;
+}
+
+#purchase-pay,
+#purchase-start {
+  width: 100%;
+  min-height: 45px;
+  background: var(--green);
+  border-color: var(--green);
+  color: white;
+  font-size: 13px;
+}
+
+#purchase-pay:hover:not(:disabled),
+#purchase-start:hover:not(:disabled) {
+  background: #204d39;
+}
+
+.purchase-panel > .helper:last-child {
+  margin-top: 10px;
+  font-size: 11px;
+  text-align: center;
+}
+
+@media (max-width: 620px) {
+  .purchase-panel {
+    padding: 16px;
+  }
+
+  .purchase-option {
+    padding: 12px;
+  }
+}
+/* Thông tin gói đã chọn và trạng thái thanh toán */
+.purchase-highlight {
+  margin: 14px 0;
+  padding: 13px 15px;
+  border: 1px solid #cbdcc9;
+  border-left: 4px solid var(--green);
+  border-radius: 8px;
+  background: var(--mint);
+  color: #24553d;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.purchase-success {
+  border-color: #b7d5b7;
+  border-left-color: var(--green);
+  background: #e6f3e6;
+  color: #205b37;
+  font-size: 14px;
+  font-weight: 750;
+}
 /* ===== BACK TO TOP ===== */
 
 .back-to-top {

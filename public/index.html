@@ -83,15 +83,28 @@
       </div>
       <p id="access-message" class="helper" role="status">Kích hoạt vé để nghe thuyết minh. Đây là mô phỏng cấp vé, chưa có thanh toán thật.</p>
       <div id="purchase-panel" class="purchase-panel" hidden>
-        <h3 id="purchase-heading">Chọn thời gian tham quan</h3>
+        <h3 id="purchase-heading" data-i18n="purchaseHeading">
+          Chọn thời lượng tham quan
+        </h3>
+
         <p id="purchase-summary" class="helper" role="status"></p>
+
         <div id="purchase-options" class="purchase-options"></div>
+
         <div class="purchase-actions">
-          <button id="purchase-choose" class="button primary" type="button">Chọn gói</button>
-          <button id="purchase-pay" class="button primary" type="button" hidden>Thanh toán mô phỏng</button>
-          <button id="purchase-start" class="button primary" type="button" hidden>Bắt đầu tham quan</button>
+          <button id="purchase-pay" class="button primary" type="button" hidden>
+            Thanh toán
+          </button>
+
+          <button id="purchase-start" class="button primary" type="button"
+            data-i18n="startTour" hidden>
+            Bắt đầu tham quan
+          </button>
         </div>
-        <p class="helper">Thanh toán này chỉ là mô phỏng cho đồ án, không thu tiền thật. Thời gian bắt đầu khi bạn bấm Bắt đầu tham quan.</p>
+
+        <p id="purchase-note" class="helper" data-i18n="purchaseNote">
+          Đây là thanh toán mô phỏng, không thu tiền thật. Thời gian tham quan chỉ bắt đầu tính khi bạn nhấn nút Bắt đầu tham quan.
+        </p>
       </div>
       <dl class="access-times"><div><dt data-i18n="expiry">Hết hạn lúc</dt><dd id="access-expiry">—</dd></div><div><dt data-i18n="remaining">Thời gian còn lại</dt><dd id="access-countdown">00:00</dd></div></dl>
     </section>
