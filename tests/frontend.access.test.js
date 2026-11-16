@@ -22,6 +22,7 @@ const element = () => ({
   removeAttribute(name) { delete this.attributes[name]; },
   addEventListener(name, callback) { this.events[name] = callback; },
   replaceChildren(...children) { this.children = children; }, append(...children) { this.children.push(...children); },
+  appendChild(child) { this.children.push(child); return child; },
   querySelector() { return this.children.flatMap((child) => child.children).find((child) => child.checked); },
   click() { this.events.click?.(); }, focus: jest.fn(), scrollIntoView: jest.fn(),
   pause: jest.fn(), load: jest.fn(), play: jest.fn().mockResolvedValue(),
@@ -136,14 +137,21 @@ it('new QR keeps its purchased state across inspect and starts GPS only after St
   await flush();
   expect(ui.elements['purchase-panel'].hidden).toBe(false);
   expect(ui.geolocation.watchPosition).not.toHaveBeenCalled();
-  ui.elements['purchase-options'].children[1].children[0].checked = true;
-  ui.elements['purchase-choose'].click(); await flush();
+  const options = ui.elements['purchase-options'].children;
+  expect(options).toHaveLength(3);
+  const thirtyMinutes = options.map((option) => option.children[0]).find((radio) => radio.value === '30');
+  thirtyMinutes.checked = true;
+  thirtyMinutes.events.change();
+  ui.elements['purchase-pay'].click(); await flush();
   expect(ui.elements['purchase-summary'].textContent).toContain('30.000');
   ui.elements['purchase-pay'].click(); await flush();
   expect(ui.elements['purchase-start'].hidden).toBe(false);
+  expect(ui.elements['access-countdown'].textContent).toBe('');
   expect(ui.geolocation.watchPosition).not.toHaveBeenCalled();
+  expect(requests(ui, '/api/access/start')).toHaveLength(0);
   ui.elements['purchase-start'].click(); await flush();
   expect(ui.geolocation.watchPosition).toHaveBeenCalledTimes(1);
+  expect(ui.elements['access-countdown'].textContent).toBe('30:00');
   expect(ui.elements['purchase-panel'].hidden).toBe(true);
 });
 
@@ -154,7 +162,11 @@ it('reopening a paid QR restores the paid screen without starting its clock', as
   const ui = await setup({ href: `http://localhost:3000/?voucher=${code}`, initialInspectState: state });
   expect(ui.elements['purchase-panel'].hidden).toBe(false);
   expect(ui.elements['purchase-start'].hidden).toBe(false);
-  expect(ui.elements['purchase-summary'].textContent).toContain('Đã thanh toán, chưa kích hoạt');
+  expect(ui.elements['purchase-summary'].textContent).toBe(`✓ ${ui.window.TOUR_TRANSLATIONS.vi.purchasePaidMessage}`);
+  expect(ui.elements['access-countdown'].textContent).toBe('');
+  expect(ui.geolocation.watchPosition).not.toHaveBeenCalled();
+  expect(requests(ui, '/api/access/start')).toHaveLength(0);
+  await jest.advanceTimersByTimeAsync(60000);
   expect(ui.elements['access-countdown'].textContent).toBe('');
   expect(ui.geolocation.watchPosition).not.toHaveBeenCalled();
 });
