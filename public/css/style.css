@@ -220,6 +220,29 @@ input[aria-invalid="true"] { border-color: #b93d31; }
 .notice[data-tone="error"] { color: #a92e22; background: #fff0ed; }
 .poi-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
 .poi-card { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); border-radius: 13px; padding: 22px; background: #fffefa; }
+
+/* Hình ảnh đại diện địa điểm POI */
+.poi-image-container {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-bottom: 18px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #f2eee6;
+}
+
+.poi-image-container[hidden] {
+  display: none;
+}
+
+.poi-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
 .poi-card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 21px; gap: 8px; }
 .poi-symbol { width: 40px; height: 40px; border: 1px solid #e5ddcf; background: #faf1e5; display: grid; place-items: center; border-radius: 10px; color: #b76a34; }
 .poi-category { font-size: 9px; margin: 0 0 5px; color: var(--orange); overflow-wrap: anywhere; }

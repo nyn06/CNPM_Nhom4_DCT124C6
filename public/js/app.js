@@ -872,6 +872,22 @@ function applyPoiSearch() {
       const active = poi.isActive === true;
       card.dataset.inactive = String(!active);
       card.querySelector('.poi-name').textContent = poi.name;
+
+const imageContainer = card.querySelector('.poi-image-container');
+const image = card.querySelector('.poi-image');
+
+if (imageContainer && image && typeof poi.imageUrl === 'string'
+    && /^\/uploads\/pois\/[a-zA-Z0-9._-]+\.(png|jpe?g|webp)$/i.test(poi.imageUrl)) {
+  image.src = poi.imageUrl;
+  image.alt = `Hình ảnh địa điểm ${poi.name}`;
+  imageContainer.hidden = false;
+
+  image.addEventListener('error', () => {
+    imageContainer.hidden = true;
+    image.removeAttribute('src');
+  }, { once: true });
+}
+
       card.querySelector('.poi-category').textContent = categoryLabel(poi.category);
       const savedAddress = [poi.streetAddress, poi.ward, poi.city]
         .filter((part) => typeof part === 'string' && part.trim()).map((part) => part.trim()).join(', ');

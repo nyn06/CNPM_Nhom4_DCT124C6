@@ -1,4 +1,5 @@
 const poiService = require('../services/poi.service');
+const poiImageService = require('../services/poi-image.service');
 const poiTranslationService = require('../services/poi-translation.service');
 const publicPoi = (poi) => {
   if (!poi) return poi;
@@ -125,6 +126,25 @@ class PoiController {
       next(error);
     }
   }
+
+
+  async uploadPoiImage(req, res, next) {
+    try {
+      const result = await poiImageService.savePoiImage(
+        req.params.id,
+        req.poiImage
+      );
+
+      res.status(200).json({
+        message: 'Tải ảnh POI thành công.',
+        poiId: result.poiId,
+        imageUrl: result.imageUrl,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
 
   async deletePoi(req, res, next) {
     try {

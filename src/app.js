@@ -53,6 +53,19 @@ const touristHtml = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
 app.use('/css', express.static(path.join(publicDir, 'css')));
 app.use('/js', express.static(path.join(publicDir, 'js')));
 app.use('/leaflet', express.static(path.join(__dirname, '..', 'node_modules', 'leaflet', 'dist')));
+
+const poiImagesDir = path.join(__dirname, '..', 'uploads', 'pois');
+
+app.use('/uploads/pois', express.static(poiImagesDir, {
+  dotfiles: 'deny',
+  fallthrough: false,
+  index: false,
+  setHeaders(res) {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+  },
+}));
+
 app.get(['/', '/index.html'], (req, res) => {
   res.set('Cache-Control', 'no-store');
   // OSM tiles need an origin Referer; voucher codes in the query must stay private.
