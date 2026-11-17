@@ -78,7 +78,7 @@ CREATE TABLE dbo.Jobs (
 CREATE TABLE dbo.Vouchers (
   Id uniqueidentifier NOT NULL PRIMARY KEY,
   CodeHash char(64) NOT NULL UNIQUE,
-  DurationMinutes int NOT NULL CHECK (DurationMinutes IN (15, 60, 120)),
+  DurationMinutes int NOT NULL CHECK (DurationMinutes IN (15, 30, 60)),
   Status varchar(8) NOT NULL DEFAULT 'unused' CHECK (Status IN ('unused', 'redeemed')),
   CreatedAt datetime2(3) NOT NULL DEFAULT SYSUTCDATETIME(),
   RedeemedAt datetime2(3) NULL,
@@ -91,7 +91,7 @@ CREATE TABLE dbo.GuestSessions (
   Id uniqueidentifier NOT NULL PRIMARY KEY,
   TokenHash char(64) NOT NULL UNIQUE,
   VoucherId uniqueidentifier NOT NULL UNIQUE REFERENCES dbo.Vouchers(Id),
-  DurationMinutes int NOT NULL CHECK (DurationMinutes IN (15, 60, 120)),
+  DurationMinutes int NOT NULL CHECK (DurationMinutes IN (15, 30, 60)),
   StartedAt datetime2(3) NOT NULL,
   ExpiresAt datetime2(3) NOT NULL,
   RevokedAt datetime2(3) NULL

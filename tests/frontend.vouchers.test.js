@@ -99,7 +99,7 @@ it('HTTPS configured origin keeps the activation URL and QR intact', async () =>
   expect(ui.elements['voucher-qr'].src).toContain('data:image/svg+xml');
 });
 
-it.each([15, 60, 120])('created voucher shows actual duration %i minutes', async (minutes) => {
+it.each([15, 30, 60])('created voucher shows actual duration %i minutes', async (minutes) => {
   const ui = await setup();
   ui.elements['voucher-duration'].value = String(minutes);
   ui.state.voucher.durationMinutes = minutes;

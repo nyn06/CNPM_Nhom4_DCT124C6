@@ -11,7 +11,7 @@ SET @dropConstraintSql = N'ALTER TABLE dbo.Vouchers DROP CONSTRAINT ' + QUOTENAM
 EXEC sys.sp_executesql @dropConstraintSql;
 ALTER TABLE dbo.Vouchers ALTER COLUMN DurationMinutes int NULL;
 ALTER TABLE dbo.Vouchers WITH CHECK ADD CONSTRAINT CK_Vouchers_DurationMinutes
-  CHECK (DurationMinutes IN (15, 60, 120));
+  CHECK (DurationMinutes IN (15, 30, 60));
 DECLARE @guestDurationConstraint sysname;
 SELECT @guestDurationConstraint = cc.name FROM sys.check_constraints cc
 WHERE cc.parent_object_id = OBJECT_ID(N'dbo.GuestSessions')
@@ -21,7 +21,7 @@ IF @guestDurationConstraint IS NULL
 SET @dropConstraintSql = N'ALTER TABLE dbo.GuestSessions DROP CONSTRAINT ' + QUOTENAME(@guestDurationConstraint);
 EXEC sys.sp_executesql @dropConstraintSql;
 ALTER TABLE dbo.GuestSessions WITH CHECK ADD CONSTRAINT CK_GuestSessions_DurationMinutes
-  CHECK (DurationMinutes IN (15, 30, 60, 120));
+  CHECK (DurationMinutes IN (15, 30, 60));
 
 CREATE TABLE dbo.VoucherPayments (
   Id uniqueidentifier NOT NULL PRIMARY KEY,

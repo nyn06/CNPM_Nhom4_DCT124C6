@@ -23,7 +23,7 @@ it.each([15, 30, 60])('new QR selects %i minutes at the backend price and starts
   expect((await post('inspect', { code: voucher.code }).expect(200)).body.payment).toMatchObject({
     id: chosen.body.payment.id, status: 'paid', startedAt: null });
   await post('choose', { code: voucher.code, durationMinutes: 15 }).expect(409);
-  const started = await post('start', { code: voucher.code, durationMinutes: 120 }).expect(200);
+  const started = await post('start', { code: voucher.code, durationMinutes: 30 }).expect(200);
   expect(started.body.durationMinutes).toBe(minutes);
   expect(Date.parse(started.body.expiresAt) - Date.parse(started.body.startedAt)).toBe(minutes * 60000);
   await post('start', { code: voucher.code }).expect(409);
@@ -79,8 +79,7 @@ it('production and disabled demo mode never confirm payment', async () => {
 });
 
 it('legacy voucher remains directly redeemable with its original duration', async () => {
-  const voucher = access.createVoucher({ durationMinutes: 120 }, 'http://localhost:3000');
+  const voucher = access.createVoucher({ durationMinutes: 30 }, 'http://localhost:3000');
   expect((await post('inspect', { code: voucher.code }).expect(200)).body.legacy).toBe(true);
   await post('choose', { code: voucher.code, durationMinutes: 15 }).expect(409);
-  expect((await post('redeem', { code: voucher.code }).expect(200)).body.durationMinutes).toBe(120);
-});
+expect((await post('redeem', { code: voucher.code }).expect(200)).body.durationMinutes).toBe(30);});
