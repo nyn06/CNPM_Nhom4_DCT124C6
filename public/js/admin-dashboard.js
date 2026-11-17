@@ -19,6 +19,7 @@
   let disposed = false;
   let controller = null;
   let lastData = null;
+  let lastErrorKey = null;
   const locale = () => window.ADMIN_I18N?.language() || 'vi';
 
   function reset() {
@@ -81,7 +82,7 @@
     if (busy || disposed || auth.current()?.role !== 'ADMIN') return;
     attempted = true;
     busy = true;
-    reset();
+    if (!lastData) reset();
     byId('reload-dashboard').disabled = true;
     byId('dashboard-status').textContent = (window.ADMIN_I18N?.t('js.admin_dashboard.005') ?? 'Đang tải số liệu…');
     byId('dashboard-status').dataset.tone = 'neutral';
@@ -99,17 +100,33 @@
       if (!validData(data)) throw new Error((window.ADMIN_I18N?.t('js.admin_dashboard.007') ?? 'Dữ liệu tổng quan không hợp lệ. Hãy thử lại.'));
       if (disposed || controller !== current) return;
       lastData = data;
+      lastErrorKey = null;
       render(data);
-      byId('dashboard-status').textContent = (window.ADMIN_I18N?.t('js.admin_dashboard.008', [new Date(data.generatedAt).toLocaleString(locale())]) ?? `Cập nhật lúc ${new Date(data.generatedAt).toLocaleString('vi-VN')}`);
-    } catch (error) {
-      if (!disposed && controller === current) {
-        reset();
-        lastData = null;
-        byId('dashboard-status').textContent = error.name === 'AbortError'
-          ? (window.ADMIN_I18N?.t('js.admin_dashboard.009') ?? 'Yêu cầu quá thời gian. Hãy thử lại.') : (window.ADMIN_I18N?.t('js.admin_dashboard.006') ?? 'Không tải được số liệu tổng quan. Hãy thử lại.');
-        byId('dashboard-status').dataset.tone = 'error';
-      }
-    } finally {
+
+      byId('dashboard-status').textContent =
+        window.ADMIN_I18N?.t(
+          'js.admin_dashboard.008',
+          [new Date(data.generatedAt).toLocaleString(locale())]
+        ) ?? `Cập nhật lúc ${new Date(data.generatedAt).toLocaleString('vi-VN')}`;
+
+      byId('dashboard-status').dataset.tone = 'neutral';
+      } catch (error) {
+        if (!disposed && controller === current) {
+          if (!lastData) reset();
+
+          lastErrorKey = error.name === 'AbortError'
+            ? 'js.admin_dashboard.009'
+            : 'js.admin_dashboard.006';
+
+          byId('dashboard-status').textContent =
+            window.ADMIN_I18N?.t(lastErrorKey)
+            ?? (error.name === 'AbortError'
+              ? 'Yêu cầu quá thời gian. Hãy thử lại.'
+              : 'Không tải được số liệu tổng quan. Hãy thử lại.');
+
+          byId('dashboard-status').dataset.tone = 'error';
+        }
+      } finally {
       clearTimeout(timeout);
       if (controller === current) controller = null;
       busy = false;
@@ -120,20 +137,59 @@
   function onView() { if (!attempted) return load(); return undefined; }
   window.ADMIN_DASHBOARD = { onView };
   window.ADMIN_I18N?.onChange(() => {
-    if (busy) byId('dashboard-status').textContent = window.ADMIN_I18N.t('js.admin_dashboard.005');
-    else if (lastData) {
+    if (busy) {
+      byId('dashboard-status').textContent =
+        window.ADMIN_I18N.t('js.admin_dashboard.005');
+      return;
+    }
+
+    if (lastData) {
       render(lastData);
-      byId('dashboard-status').textContent = window.ADMIN_I18N.t('js.admin_dashboard.008', [new Date(lastData.generatedAt).toLocaleString(locale())]);
-    } else if (attempted) byId('dashboard-status').textContent = window.ADMIN_I18N.t(busy ? 'js.admin_dashboard.005' : 'js.admin_dashboard.006');
+    }
+
+    if (lastErrorKey) {
+      byId('dashboard-status').textContent =
+        window.ADMIN_I18N.t(lastErrorKey);
+
+      byId('dashboard-status').dataset.tone = 'error';
+    } else if (lastData) {
+      byId('dashboard-status').textContent =
+        window.ADMIN_I18N.t(
+          'js.admin_dashboard.008',
+          [new Date(lastData.generatedAt).toLocaleString(locale())]
+        );
+
+      byId('dashboard-status').dataset.tone = 'neutral';
+    } else if (attempted) {
+      byId('dashboard-status').textContent =
+        window.ADMIN_I18N.t('js.admin_dashboard.006');
+
+      byId('dashboard-status').dataset.tone = 'error';
+    }
   });
   byId('reload-dashboard').addEventListener('click', load);
-  auth.onLost(() => { disposed = true; controller?.abort(); reset(); });
-  window.addEventListener('pagehide', () => { disposed = true; controller?.abort(); });
+
+  auth.onLost(() => {
+    disposed = true;
+    controller?.abort();
+    reset();
+  });
+
+  window.addEventListener('pagehide', () => {
+    disposed = true;
+    controller?.abort();
+  });
+
   auth.ready.then((user) => {
     if (!user || disposed) return;
+
     const admin = user.role === 'ADMIN';
+
     byId('dashboard-admin-content').hidden = !admin;
     byId('dashboard-manager-intro').hidden = admin;
-    if (admin && !byId('dashboard-screen').hidden) onView();
+
+    if (admin && !byId('dashboard-screen').hidden) {
+      onView();
+    }
   });
 })();
