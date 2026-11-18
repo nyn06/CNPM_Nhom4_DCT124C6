@@ -132,10 +132,15 @@
     const empty = byId('poi-image-empty');
     const fileInput = byId('poi-image-file');
 
-    const isEditing = mode === 'edit' && !!selectedPoi;
+const isEditing = mode === 'edit' && !!selectedPoi;
+const isCreating = mode === 'new';
 
-    section.hidden = !isEditing;
-    fileInput.value = '';
+section.hidden = !(isEditing || isCreating);
+byId('poi-image-upload').hidden = !isEditing;
+
+if (!isCreating) {
+  fileInput.value = '';
+}
     message('poi-image-status', '');
 
     const imageUrl = isEditing ? selectedPoi.imageUrl : null;
@@ -737,18 +742,86 @@
     }
   }
 
+  async function uploadNewPoiImage(poiId, file) {
+  const formData = new FormData();
+  formData.append('image', file);
+
+  const controller = new AbortController();
+  controllers.add(controller);
+
+  const timer = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const response = await fetch(`${poiUrl(poiId)}/image`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        ...auth.headers('POST')
+      },
+      body: formData
+    });
+
+    auth.handle(response);
+
+    if (!response.ok) {
+      throw apiError(response.status);
+    }
+
+    const result = await response.json();
+
+    if (
+      result.poiId !== poiId ||
+      typeof result.imageUrl !== 'string' ||
+      !/^\/uploads\/pois\/[a-zA-Z0-9_-]+\.(jpg|jpeg|png|webp)$/.test(result.imageUrl)
+    ) {
+      throw safeError('Server trả về thông tin ảnh không hợp lệ.');
+    }
+
+    return result;
+  } finally {
+    clearTimeout(timer);
+    controllers.delete(controller);
+  }
+}
+
   function savePoi(event) {
     event.preventDefault();
     if (mutating || selectionLoading || mode === 'idle') return;
     let body;
     try { body = readPoiForm(); } catch (error) { message('action-status', error.message, 'error'); return; }
     const id = selectedPoi?.id;
+    const imageFile = !id ? byId('poi-image-file').files?.[0] : null;
+    if (imageFile) {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
+  if (!allowedTypes.includes(imageFile.type)) {
+    message('action-status', 'Chỉ chấp nhận ảnh JPG, PNG hoặc WebP.', 'error');
+    return;
+  }
+
+  if (imageFile.size === 0 || imageFile.size > 5 * 1024 * 1024) {
+    message('action-status', 'Dung lượng ảnh phải lớn hơn 0 và không vượt quá 5 MB.', 'error');
+    return;
+  }
+}
     const detailsChanged = !id || ['name', 'description', 'address'].some((field) => body[field] !== selectedPoi[field]);
     const viDraft = id && viDirty() ? byId('vi-text').value : null;
     mutate(id ? (window.ADMIN_I18N?.t('js.admin.053') ?? 'Đang lưu thay đổi…') : (window.ADMIN_I18N?.t('js.admin.054') ?? 'Đang tạo địa điểm…'), async () => {
       const poi = await requestJson(id ? poiUrl(id) : '/api/pois', { method: id ? 'PUT' : 'POST', body });
       if (disposed) return '';
       if (typeof poi?.id !== 'string') throw safeError((window.ADMIN_I18N?.t('js.admin.055') ?? 'Địa điểm đã lưu nhưng phản hồi không hợp lệ. Hãy tải lại danh sách.'));
+      let imageUploadError = false;
+
+if (!id && imageFile) {
+  try {
+    await uploadNewPoiImage(poi.id, imageFile);
+  } catch (error) {
+    imageUploadError = true;
+  }
+}
       await loadPois();
       const refreshed = await selectPoi(poi.id, true);
       if (detailsChanged) scheduleTranslationRefresh();
@@ -757,7 +830,23 @@
         message('draft-status', (window.ADMIN_I18N?.t('js.admin.056') ?? 'Có nội dung VI chưa lưu. Hãy lưu trước khi dịch hoặc tạo audio.'));
         updateControls();
       }
-      return `${id ? (window.ADMIN_I18N?.t('js.admin.057') ?? 'Đã lưu thay đổi địa điểm.') : (window.ADMIN_I18N?.t('js.admin.058') ?? 'Đã tạo địa điểm.')}${refreshed ? (window.ADMIN_I18N?.t('js.admin.059') ?? ' Địa điểm đã được mở để quản lý.') : (window.ADMIN_I18N?.t('js.admin.060') ?? ' Bấm tải lại để kiểm tra nội dung.')}`;
+      if (imageUploadError) {
+  message(
+    'poi-image-status',
+    'Địa điểm đã được tạo nhưng tải ảnh thất bại. Hãy chọn lại ảnh và nhấn "Tải ảnh lên" để thử lại.',
+    'error'
+  );
+
+  return 'Đã tạo địa điểm nhưng chưa tải được ảnh.';
+}
+
+return `${id
+  ? (window.ADMIN_I18N?.t('js.admin.057') ?? 'Đã lưu thay đổi địa điểm.')
+  : (window.ADMIN_I18N?.t('js.admin.058') ?? 'Đã tạo địa điểm.')
+}${refreshed
+  ? (window.ADMIN_I18N?.t('js.admin.059') ?? ' Địa điểm đã được mở để quản lý.')
+  : (window.ADMIN_I18N?.t('js.admin.060') ?? ' Bấm tải lại để kiểm tra nội dung.')
+}`;
     }, id);
   }
 
