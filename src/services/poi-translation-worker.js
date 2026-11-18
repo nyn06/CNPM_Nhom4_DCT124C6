@@ -3,12 +3,15 @@ const pois = require('../repositories/poi.repository');
 const translations = require('../repositories/poi-translation.repository');
 const jobs = require('../repositories/poi-translation-job.repository');
 const service = require('./poi-translation.service');
+const { verifiedHash, unverifiedHash, displayableUnverifiedHash } = require('./poi-description-hash');
 
 const fields = ['name', 'description', 'address'];
 const languages = ['en', 'ja', 'ko'];
 const hash = (value) => createHash('sha256').update(value || '', 'utf8').digest('hex');
 const matchesSource = (poi, row, field) => row?.[`${field}SourceHash`] === hash(poi[field])
-  || field === 'description' && row?.descriptionSourceHash === hash(`unverified:${poi.description || ''}`);
+  || field === 'description' && [unverifiedHash(poi.description),
+    verifiedHash(poi.description), displayableUnverifiedHash(poi.description)]
+    .includes(row?.descriptionSourceHash);
 let timer;
 let active;
 let lastQueueError;
@@ -31,6 +34,14 @@ function logQueueError(error, stage) {
   suppressedQueueErrors = 0;
 }
 
+function logTranslationFailure(poiId, language, error) {
+  const id = /^[0-9a-f-]{36}$/i.test(poiId) ? poiId : 'unknown';
+  const code = /^[A-Z][A-Z0-9_]{1,40}$/.test(error?.code || '') ? error.code : 'UNKNOWN';
+  const rule = /^[a-z][a-z0-9_]{1,40}$/.test(error?.translationRule || '')
+    ? error.translationRule : 'unknown';
+  console.error(`POI translation failed: poiId=${id} language=${language} rule=${rule} code=${code}`);
+}
+
 async function reconcile() {
   const all = await pois.findAll();
   const rows = await translations.findByPoiIds(all.map((poi) => poi.id));
@@ -50,14 +61,30 @@ async function runOnce() {
   try {
     let failure = null;
     for (const language of languages) {
-      try { await service.translate(job.poiId, { targetLanguages: [language] }); }
-      catch (error) { failure ||= error; }
+      try {
+        const result = await service.translate(job.poiId, { targetLanguages: [language],
+          skipDisplayableDescription: true });
+        const row = result.translations?.[language];
+        if (row?.descriptionUnverified) {
+          const error = new Error('Description translation has not been verified.');
+          error.code = 'UNVERIFIED_TRANSLATION';
+          error.translationRule = row.descriptionQualityReason || 'unverified';
+          throw error;
+        }
+      } catch (error) {
+        if (['UNTRUSTED_TRANSLATION', 'UNVERIFIED_TRANSLATION'].includes(error?.code))
+          logTranslationFailure(job.poiId, language, error);
+        failure ||= error;
+        if (['PROVIDER_AUTH', 'PROVIDER_QUOTA', 'PROVIDER_CONFIG',
+          'PROVIDER_RATE_LIMIT'].includes(error?.code)) break;
+      }
     }
     if (failure) throw failure;
     await jobs.complete(job);
   } catch (error) {
     const code = ['UNTRUSTED_TRANSLATION', 'UNVERIFIED_TRANSLATION', 'PROVIDER_AUTH',
-      'PROVIDER_RATE_LIMIT', 'PROVIDER_HTTP_ERROR', 'PROVIDER_INVALID_RESPONSE',
+      'PROVIDER_RATE_LIMIT', 'PROVIDER_QUOTA', 'PROVIDER_CONFIG',
+      'PROVIDER_HTTP_ERROR', 'PROVIDER_INVALID_RESPONSE',
       'PROVIDER_NETWORK', 'PROVIDER_TIMEOUT'].includes(error?.code) ? error.code
       : error?.statusCode === 503 ? 'PROVIDER_UNAVAILABLE'
         : error?.statusCode === 504 ? 'PROVIDER_TIMEOUT'

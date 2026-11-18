@@ -48,23 +48,26 @@ class Repository {
   async complete(job) {
     const pool = await getPool();
     await pool.request().input('id', sql.UniqueIdentifier, job.poiId)
-      .input('revision', sql.Int, job.revision).query(`UPDATE dbo.POITranslationJobs SET
+      .input('revision', sql.Int, job.revision).input('attempts', sql.Int, job.attempts)
+      .query(`UPDATE dbo.POITranslationJobs SET
         Status='done', LeaseUntil=NULL, LastErrorCode=NULL, UpdatedAt=SYSUTCDATETIME()
-        WHERE POIId=@id AND Revision=@revision AND Status='processing'`);
+        WHERE POIId=@id AND Revision=@revision AND Attempts=@attempts AND Status='processing'`);
   }
 
   async fail(job, code) {
     const pool = await getPool();
     await pool.request().input('id', sql.UniqueIdentifier, job.poiId)
-      .input('revision', sql.Int, job.revision).input('code', sql.VarChar(32), code)
+      .input('revision', sql.Int, job.revision).input('attempts', sql.Int, job.attempts)
+      .input('code', sql.VarChar(32), code)
       .query(`UPDATE dbo.POITranslationJobs SET
         Status=CASE WHEN Attempts>=3 OR @code IN ('UNTRUSTED_TRANSLATION',
-          'UNVERIFIED_TRANSLATION', 'PROVIDER_AUTH') THEN 'failed' ELSE 'pending' END,
+          'UNVERIFIED_TRANSLATION', 'PROVIDER_AUTH', 'PROVIDER_QUOTA', 'PROVIDER_CONFIG')
+          THEN 'failed' ELSE 'pending' END,
         NextAttemptAt=DATEADD(second, CASE WHEN @code='PROVIDER_RATE_LIMIT'
           THEN CASE WHEN Attempts=1 THEN 60 ELSE 600 END
           WHEN Attempts=1 THEN 10 ELSE 60 END, SYSUTCDATETIME()),
         LeaseUntil=NULL, LastErrorCode=@code, UpdatedAt=SYSUTCDATETIME()
-        WHERE POIId=@id AND Revision=@revision AND Status='processing'`);
+        WHERE POIId=@id AND Revision=@revision AND Attempts=@attempts AND Status='processing'`);
   }
 }
 module.exports = new Repository();

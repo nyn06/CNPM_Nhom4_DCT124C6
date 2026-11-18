@@ -136,9 +136,9 @@ describe('Frontend: GPS và request', () => {
       geofenceRadius: 50, isActive: true, translationPending: true,
       translationStatus: { en: { description: 'rejected' }, ja: { description: 'unverified' },
         ko: { description: 'ready' } },
-      translationFallback: { en: true, ja: false, ko: false },
+      translationFallback: { en: true, ja: true, ko: false },
       translations: { en: { name: 'Kiem tra', description: 'Nay báo cáo ổn nha', address: '40 Tu Xuong' },
-        ja: { name: 'Kiem tra', description: '翻訳された説明', address: '40 Tu Xuong' },
+        ja: { name: 'Kiem tra', description: 'Nay báo cáo ổn nha', address: '40 Tu Xuong' },
         ko: { name: 'Kiem tra', description: '정상 보고', address: '40 Tu Xuong' } } };
     elements['poi-template'].content = { firstElementChild: { cloneNode: () => ({
       dataset: {}, querySelector: () => createElement()
@@ -157,12 +157,20 @@ describe('Frontend: GPS và request', () => {
     expect(elements['nearest-description'].textContent).toContain('quality checks');
     elements.language.value = 'ja';
     elements.language.events.change();
-    expect(elements['nearest-description'].textContent).toContain('翻訳された説明');
-    expect(elements['nearest-description'].textContent).toContain('十分に確認');
-    expect(elements['nearest-description'].textContent).not.toContain('ベトナム語を表示');
+    expect(elements['nearest-description'].textContent).toContain('Nay báo cáo ổn nha');
+    expect(elements['nearest-description'].textContent).toContain('ベトナム語を表示');
     elements.language.value = 'ko';
     elements.language.events.change();
     expect(elements['nearest-description'].textContent).toBe('정상 보고');
+    const descriptions = { en: 'English description', ja: '日本語の説明', ko: '한국어 설명' };
+    for (const language of ['en', 'ja', 'ko']) {
+      poi.translationStatus[language] = { description: 'unverified' };
+      poi.translationFallback[language] = false;
+      poi.translations[language].description = descriptions[language];
+      elements.language.value = language;
+      elements.language.events.change();
+      expect(elements['nearest-description'].textContent).toBe(descriptions[language]);
+    }
   });
   it('cập nhật khoảng cách và thứ tự theo GPS thật, giữ thứ tự gốc khi dừng', async () => {
     const { elements, fetch, geolocation } = await setup();
