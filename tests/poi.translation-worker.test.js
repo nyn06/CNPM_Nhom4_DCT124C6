@@ -80,6 +80,113 @@ test('bad short descriptions are rejected for each language', async () => {
     translationStatus: { en: { description: 'rejected' } } });
 });
 
+test('quality failure logs the language and rule without logging source or provider text', async () => {
+  const poi = poiService.createPoi({ ...input, name: 'Bánh Canh Cua Sài Gòn',
+    description: 'Quán phục vụ bánh canh với nước dùng cua.' });
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  provider.translate.mockResolvedValue({ text: 'A generic soup restaurant.' });
+  try {
+    await worker.runOnce();
+    expect(jobs.get(poi.id).lastErrorCode).toBe('UNTRUSTED_TRANSLATION');
+    expect(log.mock.calls.map(([message]) => message)).toEqual(expect.arrayContaining([
+      expect.stringContaining('language=en rule=protected_term_missing code=UNTRUSTED_TRANSLATION'),
+      expect.stringContaining('language=ja rule=protected_term_missing code=UNTRUSTED_TRANSLATION'),
+      expect.stringContaining('language=ko rule=protected_term_missing code=UNTRUSTED_TRANSLATION'),
+    ]));
+    expect(JSON.stringify(log.mock.calls)).not.toContain('Quán phục vụ');
+    expect(JSON.stringify(log.mock.calls)).not.toContain('A generic soup restaurant');
+  } finally { log.mockRestore(); }
+});
+
+test('unverified descriptions remain drafts and do not complete the translation job', async () => {
+  const poi = poiService.createPoi(input);
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  provider.translate.mockImplementation(async (_text, _from, target) => ({ text: target === 'vi'
+    ? 'Chỉ đường đến quán.' : target === 'ja' ? 'ベトナム料理'
+      : target === 'ko' ? '베트남 요리' : 'Vietnamese dish' }));
+  try {
+    await worker.runOnce();
+    expect(jobs.get(poi.id)).toMatchObject({ status: 'failed', lastErrorCode: 'UNVERIFIED_TRANSLATION' });
+    const rows = await translations.findByPoiIds([poi.id]);
+    expect(rows.find((row) => row.language === 'en').descriptionSourceHash)
+      .not.toBe(require('crypto').createHash('sha256').update(input.description).digest('hex'));
+    expect(log.mock.calls.map(([message]) => message)).toEqual(expect.arrayContaining([
+      expect.stringContaining('language=en rule=insufficient_semantic_evidence code=UNVERIFIED_TRANSLATION'),
+    ]));
+  } finally { log.mockRestore(); }
+});
+
+test('new safe unverified descriptions display automatically in EN/JA/KO, then become stale on VI edit', async () => {
+  const source = 'Quán phục vụ bánh mì với thịt và rau.';
+  const poi = poiService.createPoi({ ...input, name: 'Bánh Mì Việt', description: source });
+  provider.translate.mockImplementation(async (_text, _from, target) => ({ text: target === 'vi'
+    ? 'Quán phục vụ món ăn trong một câu giải thích rất dài và khác.'
+    : target === 'ja' ? 'この店はZXQFOOD0ZXQと肉を提供します。'
+      : target === 'ko' ? '이 식당은 ZXQFOOD0ZXQ와 고기를 제공합니다.'
+        : 'The restaurant serves ZXQFOOD0ZXQ with meat.' }));
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try { await worker.runOnce(); } finally { log.mockRestore(); }
+  expect(jobs.get(poi.id).lastErrorCode).toBe('UNVERIFIED_TRANSLATION');
+  const { displayableUnverifiedHash } = require('../src/services/poi-description-hash');
+  const rows = await translations.findByPoiIds([poi.id]);
+  expect(rows).toHaveLength(3);
+  expect(rows.every((row) => row.descriptionSourceHash === displayableUnverifiedHash(source))).toBe(true);
+  await worker.reconcile();
+  expect(jobs.get(poi.id).status).toBe('failed');
+  for (const language of ['en', 'ja', 'ko']) {
+    const detail = (await request(app).get(`/api/pois/${poi.id}?lang=${language}`).expect(200)).body;
+    const list = (await request(app).get(`/api/pois?lang=${language}`).expect(200)).body[0];
+    expect(detail.description).toBe(rows.find((row) => row.language === language).description);
+    expect(list.description).toBe(detail.description);
+    expect(detail.translationStatus[language].description).toBe('unverified');
+    expect(detail.translationFallback[language]).toBe(false);
+  }
+  const updated = `${source} Mô tả mới.`;
+  poiService.updatePoi(poi.id, { ...input, name: poi.name, description: updated });
+  expect(jobs.get(poi.id).status).toBe('pending');
+  for (const language of ['en', 'ja', 'ko']) {
+    const detail = (await request(app).get(`/api/pois/${poi.id}?lang=${language}`).expect(200)).body;
+    expect(detail.description).toBe(updated);
+    expect(detail.translationFallback[language]).toBe(true);
+  }
+  const relog = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try { await worker.runOnce(); } finally { relog.mockRestore(); }
+  for (const language of ['en', 'ja', 'ko']) {
+    const detail = (await request(app).get(`/api/pois/${poi.id}?lang=${language}`).expect(200)).body;
+    expect(detail.description).toContain('banh mi');
+    expect(detail.translationStatus[language].description).toBe('unverified');
+    expect(detail.translationFallback[language]).toBe(false);
+  }
+});
+
+test('address edit does not retranslate a displayable unverified Description', async () => {
+  const source = 'Quán phục vụ bánh mì với thịt và rau.';
+  const poi = poiService.createPoi({ ...input, name: 'Bánh Mì Việt', description: source });
+  provider.translate.mockImplementation(async (_text, _from, target) => ({ text: target === 'vi'
+    ? 'Một câu dịch ngược khác dài nhưng không đủ chứng minh đầy đủ nội dung món ăn.'
+    : target === 'ja' ? 'この店はZXQFOOD0ZXQと肉を提供します。'
+      : target === 'ko' ? '이 식당은 ZXQFOOD0ZXQ와 고기를 제공합니다.'
+        : 'The restaurant serves ZXQFOOD0ZXQ with meat.' }));
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try { await worker.runOnce(); } finally { log.mockRestore(); }
+  const { displayableUnverifiedHash } = require('../src/services/poi-description-hash');
+  const originalRows = await translations.findByPoiIds([poi.id]);
+  expect(originalRows).toHaveLength(3);
+  expect(originalRows.every((row) => row.descriptionSourceHash === displayableUnverifiedHash(source))).toBe(true);
+  provider.translate.mockClear();
+  poiService.updatePoi(poi.id, { ...input, name: poi.name, description: source,
+    address: 'Updated address' });
+  const addressLog = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try { await worker.runOnce(); } finally { addressLog.mockRestore(); }
+  expect(provider.translate).not.toHaveBeenCalled();
+  const rows = await translations.findByPoiIds([poi.id]);
+  expect(rows.every((row) => row.descriptionSourceHash === displayableUnverifiedHash(source))).toBe(true);
+  for (const language of ['en', 'ja', 'ko']) {
+    const view = (await request(app).get(`/api/pois/${poi.id}?lang=${language}`).expect(200)).body;
+    expect(view.translationFallback[language]).toBe(false);
+  }
+});
+
 test('one unverified language does not discard two verified translations', async () => {
   const poi = poiService.createPoi(input);
   provider.translate.mockImplementation(async (text, _source, target) => ({
@@ -104,6 +211,20 @@ test('rate limit uses a longer backoff before the bounded retry', () => {
   expect(jobs.get('limited').status).toBe('pending');
   expect(jobs.get('limited').nextAttemptAt - now).toBeGreaterThanOrEqual(60000);
   expect(jobs.claim()).toBeNull();
+});
+
+test('a reclaimed lease cannot be completed or failed by an older attempt', () => {
+  jobs.enqueue('leased');
+  const first = jobs.claim();
+  jobs.get('leased').leaseUntil = 0;
+  const second = jobs.claim();
+  expect(second.attempts).toBe(first.attempts + 1);
+  jobs.complete(first);
+  jobs.fail(first, 'PROVIDER_NETWORK');
+  expect(jobs.get('leased')).toMatchObject({ status: 'processing', attempts: second.attempts,
+    lastErrorCode: null });
+  jobs.complete(second);
+  expect(jobs.get('leased').status).toBe('done');
 });
 
 test('JA/KO names use Latin Vietnamese without invoking the provider', async () => {

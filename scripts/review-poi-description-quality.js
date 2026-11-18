@@ -1,113 +1,114 @@
 require('dotenv').config();
 
-const { createHash } = require('crypto');
-const { sql, getPool } = require('../src/database/repository');
 const { closePool } = require('../src/database/connection');
 const pois = require('../src/repositories/poi.repository');
 const translations = require('../src/repositories/poi-translation.repository');
-const provider = require('../src/integrations/translation/translation.provider');
 const quality = require('../src/services/poi-description-quality');
+const { invalidEnglishDescription } = require('../src/services/poi-english');
 const service = require('../src/services/poi-translation.service');
+const { sql, getPool } = require('../src/database/repository');
+const { hash, verifiedHash, unverifiedHash, displayableUnverifiedHash } =
+  require('../src/services/poi-description-hash');
 
-const hash = (value) => createHash('sha256').update(value || '', 'utf8').digest('hex');
-const args = process.argv.slice(2);
-const ids = args.filter((arg) => arg.startsWith('--id=')).map((arg) => arg.slice(5));
-const languages = args.filter((arg) => arg.startsWith('--lang=')).map((arg) => arg.slice(7));
-const applyPlan = args.find((arg) => arg.startsWith('--apply='))?.slice(8);
-const retryPlan = args.find((arg) => arg.startsWith('--retry='))?.slice(8);
-const targets = languages.length ? languages : ['en', 'ja', 'ko'];
-
-async function main() {
-  if (ids.some((id) => !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id))
-    || targets.some((language) => !['en', 'ja', 'ko'].includes(language)))
-    throw new Error('Use POI UUIDs and en, ja, or ko language codes.');
-  if ((applyPlan || retryPlan) && (!ids.length || !languages.length))
-    throw new Error('A write requires explicit --id and --lang scope plus the reviewed plan hash.');
-  if (applyPlan && retryPlan) throw new Error('Choose either --apply or --retry.');
-  const all = await pois.findAll();
-  const selected = ids.length ? all.filter((poi) => ids.includes(poi.id)) : all;
-  if (ids.length !== selected.length && ids.length) throw new Error('One or more POI IDs do not exist.');
-  const rows = await translations.findByPoiIds(selected.map((poi) => poi.id));
-  const records = [];
-  const flagged = [];
-  for (const poi of selected) for (const language of targets) {
-    const row = rows.find((item) => item.poiId === poi.id && item.language === language);
-    let result;
-    if (!row?.description) result = { status: 'missing' };
-    else if (row.descriptionSourceHash !== hash(poi.description)
-      && row.descriptionSourceHash !== hash(`unverified:${poi.description || ''}`))
-      result = { status: 'stale' };
-    else if (row.descriptionManual) result = { status: 'manual' };
-    else {
-      try {
-        const back = (await provider.translate(row.description, language, 'vi')).text;
-        result = quality.assess(poi.description, row.description, language, back, poi.name);
-        if (row.descriptionSourceHash === hash(`unverified:${poi.description || ''}`)
-          && result.status === 'ready') result = { status: 'unverified', reason: 'stored_unverified' };
-      } catch {
-        result = { status: 'provider_unavailable' };
-      }
-    }
-    records.push({ poiId: poi.id, language, status: result.status, reason: result.reason || null,
-      retention: result.retention ?? null });
-    if (result.status === 'rejected' || result.reason === 'vietnamese_text_remaining')
-      flagged.push({ poiId: poi.id, language, description: row.description,
-        sourceHash: row.descriptionSourceHash });
-  }
-  const plan = hash(JSON.stringify(records.map((record) => {
-    const row = rows.find((item) => item.poiId === record.poiId && item.language === record.language);
-    const poi = selected.find((item) => item.id === record.poiId);
-    return { ...record, sourceHash: hash(poi.description),
-      savedDescriptionHash: hash(row?.description), savedSourceHash: row?.descriptionSourceHash };
-  })));
-  const counts = records.reduce((result, row) => {
-    result[row.status] = (result[row.status] || 0) + 1;
-    return result;
-  }, {});
-  process.stdout.write(`${JSON.stringify({ mode: applyPlan ? 'apply' : retryPlan ? 'retry' : 'dry-run',
-    poiCount: selected.length, counts, plan, records }, null, 2)}\n`);
-  if (!applyPlan && !retryPlan) return;
-  if ((applyPlan || retryPlan) !== plan || records.some((row) => row.status === 'provider_unavailable'))
-    throw new Error('Audit changed or provider was unavailable. Review a new dry-run plan first.');
-  if (retryPlan) {
-    const results = [];
-    for (const poi of selected) for (const language of targets) {
-      const record = records.find((item) => item.poiId === poi.id && item.language === language);
-      if (!record || ['ready', 'manual'].includes(record.status)) continue;
-      try {
-        await service.translate(poi.id, { targetLanguages: [language] });
-        results.push({ poiId: poi.id, language, result: 'translated' });
-      } catch (error) {
-        results.push({ poiId: poi.id, language, result: 'failed',
-          code: error.code || 'TRANSLATION_FAILED' });
-      }
-    }
-    process.stdout.write(`${JSON.stringify({ results }, null, 2)}\n`);
-    if (results.some((item) => item.result === 'failed')) process.exitCode = 1;
-    return;
-  }
-  const tx = new sql.Transaction(await getPool());
-  await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
-  try {
-    for (const row of flagged) {
-      const result = await new sql.Request(tx)
-        .input('id', sql.UniqueIdentifier, row.poiId)
-        .input('language', sql.VarChar(2), row.language)
-        .input('description', sql.NVarChar(sql.MAX), row.description)
-        .input('hash', sql.VarChar(64), row.sourceHash)
-        .query(`UPDATE dbo.POITranslations SET DescriptionSourceHash=NULL
-          WHERE POIId=@id AND Language=@language AND Description=@description
-            AND DescriptionSourceHash=@hash AND DescriptionManual=0`);
-      if (result.rowsAffected[0] !== 1)
-        throw new Error('A translation changed during review; no updates committed.');
-    }
-    await tx.commit();
-    process.stdout.write(`Invalidated ${flagged.length} scoped descriptions; the original text remains stored.\n`);
-  } catch (error) {
-    await tx.rollback();
-    throw error;
-  }
+function parseScope(args) {
+  if (args.some((arg) => !/^--(?:id|lang|field|retry|apply)=.+$/u.test(arg)))
+    throw new Error('Unknown review option.');
+  const option = (name) => args.filter((arg) => arg.startsWith(`${name}=`))
+    .map((arg) => arg.slice(name.length + 1));
+  const ids = option('--id');
+  const languages = option('--lang');
+  const retries = option('--retry');
+  const applies = option('--apply');
+  const fields = option('--field');
+  if (ids.length !== 1 || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(ids[0])
+    || languages.length !== 1 || !['en', 'ja', 'ko'].includes(languages[0]))
+    throw new Error('Use exactly one --id=POI-UUID and one --lang=en|ja|ko.');
+  if (fields.length > 1 || fields.length && fields[0] !== 'description'
+    || retries.length > 1 || applies.length > 1 || retries.length && applies.length)
+    throw new Error('Invalid --field, --retry or --apply options.');
+  if (retries.length && fields[0] !== 'description')
+    throw new Error('Retry requires --field=description.');
+  if (applies.length && fields.length) throw new Error('--apply cannot use --field.');
+  return { ids, languages, retries, applies, fields };
 }
 
-main().catch((error) => { console.error(`Description review failed: ${error.code || error.message}`);
-  process.exitCode = 1; }).finally(closePool);
+function review(poi, row, language) {
+  const sourceHash = hash(poi.description);
+  const savedSourceHash = row?.descriptionSourceHash || null;
+  const preliminary = row?.description && !row.descriptionManual
+    ? quality.assess(poi.description, row.description, language, null, poi.name) : null;
+  const safety = row?.description && !row.descriptionManual
+    && [unverifiedHash(poi.description), displayableUnverifiedHash(poi.description)]
+      .includes(savedSourceHash)
+    ? quality.assessDisplay(poi.description, row.description, language, poi.name) : null;
+  const invalidEnglish = language === 'en' && row?.description
+    && invalidEnglishDescription(poi.description, row.description);
+  let status = 'missing';
+  if (row?.descriptionManual) status = 'manual';
+  else if (row?.description) {
+    if (![sourceHash, verifiedHash(poi.description), unverifiedHash(poi.description),
+      displayableUnverifiedHash(poi.description)].includes(savedSourceHash)) status = 'stale';
+    else if (preliminary.status === 'rejected' || preliminary.reason === 'vietnamese_text_remaining'
+      || invalidEnglish
+      || safety && !safety.allowed) status = 'rejected';
+    else if (savedSourceHash === verifiedHash(poi.description)) status = 'ready';
+    else status = 'unverified';
+  }
+  const action = ['ready', 'manual'].includes(status)
+    || status === 'unverified' && savedSourceHash === displayableUnverifiedHash(poi.description)
+    ? 'none' : 'retry_description';
+  return { poiId: poi.id, poiName: poi.name, language, status,
+    reason: status === 'rejected' ? safety?.reason || (invalidEnglish
+      ? 'invalid_english_description' : preliminary.reason) : null,
+    sourceHash, savedSourceHash, savedDescriptionHash: row?.description ? hash(row.description) : null,
+    writeColumns: action === 'none' ? [] : ['Description', 'DescriptionSourceHash'], action };
+}
+
+async function main(args = process.argv.slice(2)) {
+  const { ids, languages, retries, applies, fields } = parseScope(args);
+  if (process.env.NODE_ENV !== 'test') {
+    const identity = (await (await getPool()).request()
+      .query('SELECT DB_NAME() AS DatabaseName')).recordset[0];
+    if (identity?.DatabaseName !== 'AutoNarrationDB')
+      throw new Error('Expected AutoNarrationDB; no POI data was read.');
+  }
+  const all = await pois.findAll();
+  const poi = all.find((item) => item.id.toLowerCase() === ids[0].toLowerCase());
+  if (!poi) throw new Error('POI ID does not exist.');
+  const row = (await translations.findByPoiIds([poi.id]))
+    .find((item) => item.language === languages[0]);
+  const preview = review(poi, row, languages[0]);
+  const record = fields.length ? preview : { ...preview,
+    action: preview.status === 'rejected' ? 'invalidate_hash' : 'none',
+    writeColumns: preview.status === 'rejected' ? ['DescriptionSourceHash'] : [] };
+  const plan = hash(JSON.stringify(record));
+  const mode = retries.length ? 'retry' : applies.length ? 'apply' : 'dry-run';
+  process.stdout.write(`${JSON.stringify({ mode, field: fields[0] || null, plan, record }, null, 2)}\n`);
+  if (mode === 'dry-run') return;
+  if ((retries[0] || applies[0]) !== plan)
+    throw new Error('The review plan changed; run a new dry run first.');
+  if (record.action === 'none') return;
+  if (mode === 'retry') {
+    await service.translate(poi.id, { targetLanguages: [languages[0]], descriptionOnly: true });
+    process.stdout.write('Description retry completed for the selected POI and language.\n');
+    return;
+  }
+  if (record.status !== 'rejected' || !row) return;
+  const result = await (await getPool()).request()
+    .input('id', sql.UniqueIdentifier, poi.id)
+    .input('language', sql.VarChar(2), languages[0])
+    .input('description', sql.NVarChar(sql.MAX), row.description)
+    .input('sourceHash', sql.VarChar(64), row.descriptionSourceHash)
+    .query(`UPDATE dbo.POITranslations SET DescriptionSourceHash=NULL
+      WHERE POIId=@id AND Language=@language AND Description=@description
+        AND DescriptionSourceHash=@sourceHash AND DescriptionManual=0`);
+  if (result.rowsAffected[0] !== 1) throw new Error('Translation changed during review.');
+  process.stdout.write('The selected rejected Description hash was invalidated.\n');
+}
+
+if (require.main === module) main().catch((failure) => {
+  process.stderr.write(`Description review failed: ${failure.code || failure.message}\n`);
+  process.exitCode = 1;
+}).finally(closePool);
+
+module.exports = { parseScope, review, main };

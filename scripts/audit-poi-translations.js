@@ -7,10 +7,12 @@ const service = require('../src/services/poi-translation.service');
 const provider = require('../src/integrations/translation/translation.provider');
 const { englishName, englishAddress, invalidEnglishDescription, descriptionRetention } = require('../src/services/poi-english');
 const { closePool } = require('../src/database/connection');
+const { verifiedHash, unverifiedHash } = require('../src/services/poi-description-hash');
 
 const hash = (value) => createHash('sha256').update(value || '', 'utf8').digest('hex');
 const sourceMatches = (poi, row, field) => row?.[`${field}SourceHash`] === hash(poi[field])
-  || field === 'description' && row?.descriptionSourceHash === hash(`unverified:${poi.description || ''}`);
+  || field === 'description' && [verifiedHash(poi.description), unverifiedHash(poi.description)]
+    .includes(row?.descriptionSourceHash);
 const fields = ['name', 'address', 'description'];
 const apply = process.argv.includes('--apply');
 const verifyDescriptions = process.argv.includes('--verify-descriptions');

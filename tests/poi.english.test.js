@@ -68,16 +68,16 @@ test('legacy EN values are hidden and repaired without recreating the POI', asyn
   expect(pois.findById(source.id)).toMatchObject(source);
 });
 
-test('legacy descriptions that lose the POI dish name remain visible as unverified', async () => {
+test('legacy descriptions that lose the POI dish name remain stored but are rejected publicly', async () => {
   await rows.save({ poiId: source.id, language: 'en', name: 'Hu Tieu',
     address: englishAddress(source.address), description: 'A noodle shop in Southern Vietnam.',
     nameSourceHash: hash(source.name), addressSourceHash: hash(source.address),
     descriptionSourceHash: hash(source.description), nameManual: false,
     addressManual: false, descriptionManual: false });
   const view = (await request(app).get('/api/pois?lang=en')).body[0];
-  expect(view.description).toBe('A noodle shop in Southern Vietnam.');
-  expect(view.translationStatus.en.description).toBe('unverified');
-  expect(view.translationFallback.en).toBe(false);
+  expect(view.description).toBe(source.description);
+  expect(view.translationStatus.en.description).toBe('rejected');
+  expect(view.translationFallback.en).toBe(true);
   expect((await rows.findByPoiIds([source.id]))[0].description)
     .toBe('A noodle shop in Southern Vietnam.');
 });
@@ -104,7 +104,7 @@ test('invalid provider output cannot replace a saved translation', async () => {
   expect((await request(app).get('/api/pois?lang=en')).body[0].description).toBe('Món ăn mới ở Sài Gòn.');
 });
 
-test('low-fidelity back translation is saved with unverified status', async () => {
+test('low-fidelity back translation remains unverified but safe current output is displayed', async () => {
   provider.translate.mockImplementation(async (_text, from) => ({ text: from === 'en'
     ? 'Hủ Tiếu ở đó.' : 'Hu Tieu is a familiar dish in Southern Vietnam.' }));
   await service.translate(source.id, { targetLanguages: ['en'] });
@@ -113,22 +113,29 @@ test('low-fidelity back translation is saved with unverified status', async () =
   expect(view.translationStatus.en.description).toBe('unverified');
   expect(view.translationFallback.en).toBe(false);
   expect((await rows.findByPoiIds([source.id]))).toHaveLength(1);
+  expect((await rows.findByPoiIds([source.id]))[0].description)
+    .toBe('Hu Tieu is a familiar dish in Southern Vietnam.');
 });
 
-test('usable EN, JA and KO descriptions stay visible with unverified status', async () => {
-  provider.translate.mockImplementation(async (_text, _source, target) => ({ text: target === 'vi'
-    ? 'Hủ Tiếu ở đó.' : { en: 'Hu Tieu is a familiar dish in Southern Vietnam.',
-      ja: 'Hu Tieu はベトナム南部の料理です。',
-      ko: 'Hu Tieu는 베트남 남부 음식입니다.' }[target] }));
+test('safe current unverified EN, JA and KO descriptions remain unverified and display publicly', async () => {
+  provider.translate.mockImplementation(async (text, _source, target) => {
+    const dish = text.match(/ZXQFOOD\d+ZXQ/)?.[0] || 'Hu Tieu';
+    return { text: target === 'vi' ? 'Hủ Tiếu ở đó.'
+      : { en: 'Hu Tieu is a familiar dish in Southern Vietnam.',
+        ja: `${dish} はベトナム南部の料理です。`,
+        ko: `${dish}는 베트남 남부 음식입니다.` }[target] };
+  });
   await service.translate(source.id, { targetLanguages: ['en', 'ja', 'ko'] });
   for (const language of ['en', 'ja', 'ko']) {
     const view = (await request(app).get(`/api/pois/${source.id}?lang=${language}`)).body;
-    expect(view.description).not.toBe(source.description);
-    expect(view.description).toContain('Hu Tieu');
+    expect(view.description).toBe((await rows.findByPoiIds([source.id]))
+      .find((row) => row.language === language).description);
     expect(view.translationStatus[language].description).toBe('unverified');
     expect(view.translationFallback[language]).toBe(false);
   }
-  expect((await rows.findByPoiIds([source.id]))).toHaveLength(3);
+  const stored = await rows.findByPoiIds([source.id]);
+  expect(stored).toHaveLength(3);
+  for (const row of stored) expect(row.description).toContain('Hu Tieu');
 });
 
 test('English provider receives protected POI name and culinary broth term', async () => {

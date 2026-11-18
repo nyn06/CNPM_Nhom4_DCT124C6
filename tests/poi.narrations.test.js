@@ -86,6 +86,21 @@ describe('POI narrations API', () => {
     expect(get.body).toEqual({ poiId: poi.id, language, text: translated[language] });
   });
 
+  it('Narration keeps LibreTranslate when Description selects DeepL', async () => {
+    const previous = process.env.POI_DESCRIPTION_PROVIDER;
+    process.env.POI_DESCRIPTION_PROVIDER = 'deepl';
+    try {
+      saveSource();
+      const res = await request(app).post(`${base()}/translations`)
+        .send({ targetLanguages: ['en'] });
+      expect(res.status).toBe(200);
+      expect(provider.translate).toHaveBeenCalledWith(vietnamese, 'vi', 'en');
+    } finally {
+      if (previous === undefined) delete process.env.POI_DESCRIPTION_PROVIDER;
+      else process.env.POI_DESCRIPTION_PROVIDER = previous;
+    }
+  });
+
   it('dịch EN/JA/KO cùng request, trim kết quả và GET all đủ bốn ngôn ngữ', async () => {
     saveSource();
     provider.translate.mockImplementation(async (text, source, target) => ({ text: ` ${translated[target]}\n` }));

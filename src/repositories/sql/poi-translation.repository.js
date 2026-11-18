@@ -52,6 +52,51 @@ class PoiTranslationRepository {
     } catch (error) { await tx.rollback(); throw error; }
     return item;
   }
+
+  async saveDescription(item, previous) {
+    const pool = await getPool();
+    if (!previous) {
+      const tx = new sql.Transaction(pool);
+      await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
+      try {
+        const request = () => new sql.Request(tx)
+          .input('poiId', sql.UniqueIdentifier, item.poiId)
+          .input('language', sql.VarChar(2), item.language);
+        const existing = (await request().query(`SELECT 1 AS Found FROM dbo.POITranslations WITH (UPDLOCK, HOLDLOCK)
+          WHERE POIId=@poiId AND Language=@language`)).recordset.length;
+        if (existing) throw Object.assign(new Error('Description changed during translation.'),
+          { statusCode: 409, code: 'TRANSLATION_CONFLICT' });
+        await request().input('description', sql.NVarChar(sql.MAX), item.description)
+          .input('sourceHash', sql.VarChar(64), item.descriptionSourceHash)
+          .query(`INSERT dbo.POITranslations
+            (POIId, Language, Description, DescriptionSourceHash)
+            VALUES (@poiId, @language, @description, @sourceHash)`);
+        await tx.commit();
+      } catch (error) {
+        await tx.rollback();
+        throw error;
+      }
+      return item;
+    }
+    const result = await pool.request()
+      .input('poiId', sql.UniqueIdentifier, item.poiId)
+      .input('language', sql.VarChar(2), item.language)
+      .input('description', sql.NVarChar(sql.MAX), item.description)
+      .input('sourceHash', sql.VarChar(64), item.descriptionSourceHash)
+      .input('previousDescription', sql.NVarChar(sql.MAX), previous.description)
+      .input('previousHash', sql.VarChar(64), previous.descriptionSourceHash)
+      .query(`UPDATE dbo.POITranslations SET Description=@description,
+        DescriptionSourceHash=@sourceHash WHERE POIId=@poiId AND Language=@language
+        AND ((Description IS NULL AND @previousDescription IS NULL)
+          OR CONVERT(varbinary(max), Description)=CONVERT(varbinary(max), @previousDescription))
+        AND DescriptionManual=0
+        AND (DescriptionSourceHash=@previousHash
+          OR (DescriptionSourceHash IS NULL AND @previousHash IS NULL))`);
+    if (result.rowsAffected[0] !== 1)
+      throw Object.assign(new Error('Description changed during translation.'),
+        { statusCode: 409, code: 'TRANSLATION_CONFLICT' });
+    return item;
+  }
 }
 
 module.exports = new PoiTranslationRepository();

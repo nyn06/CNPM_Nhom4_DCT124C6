@@ -1,28 +1,32 @@
-const { createHash } = require('crypto');
 const poiRepository = require('../repositories/poi.repository');
 const translationsRepository = require('../repositories/poi-translation.repository');
 const jobsRepository = require('../repositories/poi-translation-job.repository');
-const provider = require('../integrations/translation/translation.provider');
+const descriptionProvider = require('../integrations/translation/poi-description.provider');
 const { englishName, localizedAddress, invalidEnglishDescription } = require('./poi-english');
 const descriptionQuality = require('./poi-description-quality');
+const descriptionPipeline = require('./poi-description-pipeline');
+const { hash, verifiedHash, unverifiedHash, displayableUnverifiedHash } = require('./poi-description-hash');
 
 const fields = ['name', 'description', 'address'];
 const languages = ['vi', 'en', 'ja', 'ko'];
-const hash = (value) => createHash('sha256').update(value || '', 'utf8').digest('hex');
-const unverifiedHash = (value) => hash(`unverified:${value || ''}`);
 const currentHash = (poi, row, field) => row[sourceKey(field)] === hash(poi[field])
-  || field === 'description' && row[sourceKey(field)] === unverifiedHash(poi[field]);
+  || field === 'description' && [verifiedHash(poi[field]), unverifiedHash(poi[field]),
+    displayableUnverifiedHash(poi[field])]
+    .includes(row[sourceKey(field)]);
 const sourceKey = (field) => `${field}SourceHash`;
 const manualKey = (field) => `${field}Manual`;
-const fail = (message, statusCode, code) => Object.assign(new Error(message), { statusCode, code });
-async function checkDescription(source, translated, language, poiName) {
+const fail = (message, statusCode, code, diagnostics = {}) =>
+  Object.assign(new Error(message), { statusCode, code, ...diagnostics });
+async function checkDescription(source, translated, language, poiName, provider) {
   const structural = descriptionQuality.assess(source, translated, language, null, poiName);
   if (structural.status === 'rejected')
-    throw fail('Bản dịch mô tả không hợp lệ.', 502, 'UNTRUSTED_TRANSLATION');
+    throw fail('Bản dịch mô tả không hợp lệ.', 502, 'UNTRUSTED_TRANSLATION',
+      { translationLanguage: language, translationRule: structural.reason });
   const back = (await provider.translate(translated, language, 'vi'))?.text;
   const result = descriptionQuality.assess(source, translated, language, back || '', poiName);
   if (result.status === 'rejected')
-    throw fail('Bản dịch mô tả không hợp lệ.', 502, 'UNTRUSTED_TRANSLATION');
+    throw fail('Bản dịch mô tả không hợp lệ.', 502, 'UNTRUSTED_TRANSLATION',
+      { translationLanguage: language, translationRule: result.reason });
   return result;
 }
 
@@ -30,9 +34,17 @@ function inspect(poi, row) {
   if (!row) return null;
   const preliminary = row.description && !row.descriptionManual && currentHash(poi, row, 'description')
     ? descriptionQuality.assess(poi.description, row.description, row.language, null, poi.name) : null;
+  const displaySafety = row.description && !row.descriptionManual
+    && [unverifiedHash(poi.description), displayableUnverifiedHash(poi.description)]
+      .includes(row.descriptionSourceHash)
+    ? descriptionQuality.assessDisplay(poi.description, row.description, row.language, poi.name) : null;
   const qualityWarning = preliminary && (preliminary.status === 'rejected'
     || preliminary.reason === 'vietnamese_text_remaining')
-    ? preliminary.reason : null;
+    ? preliminary.reason : displaySafety && !displaySafety.allowed ? displaySafety.reason : null;
+  const descriptionUnverified = row.descriptionSourceHash === unverifiedHash(poi.description)
+    || row.descriptionSourceHash === displayableUnverifiedHash(poi.description)
+    || !row.descriptionManual && row.descriptionSourceHash === hash(poi.description)
+    || preliminary?.reason === 'dish_name_missing';
   return { ...row, stale: Object.fromEntries(fields.map((field) => {
     const expected = field === 'name' ? englishName(poi.name)
       : field === 'address' ? localizedAddress(poi.address, row.language, poi.streetAddress) : null;
@@ -42,10 +54,22 @@ function inspect(poi, row) {
       || field === 'description' && !!qualityWarning
       || expected !== null && !row[manualKey(field)] && row[field] !== expected);
     return [field, stale];
-  })), qualityWarning, descriptionRejected: preliminary?.status === 'rejected',
-  descriptionUnverified: row.descriptionSourceHash === unverifiedHash(poi.description)
-    || preliminary?.reason === 'dish_name_missing' };
+  })), qualityWarning, descriptionRejected: preliminary?.status === 'rejected'
+    || !!displaySafety && !displaySafety.allowed,
+  descriptionUnverified,
+  descriptionQualityReason: descriptionUnverified ? preliminary?.reason || 'unverified' : null };
 }
+
+const descriptionReady = (poi, row) => !!row?.description
+  && row.descriptionSourceHash === (row.descriptionManual
+    ? hash(poi.description) : verifiedHash(poi.description))
+  && !row.stale.description && !row.descriptionUnverified && !row.descriptionRejected;
+
+const descriptionDisplayable = (poi, row) => descriptionReady(poi, row)
+  || !!row?.description && !row.descriptionManual
+    && [unverifiedHash(poi.description), displayableUnverifiedHash(poi.description)]
+      .includes(row.descriptionSourceHash)
+    && !row.stale.description && !row.descriptionRejected && !row.qualityWarning;
 
 function display(poi, language, rows) {
   if (language === 'vi') return poi;
@@ -53,7 +77,7 @@ function display(poi, language, rows) {
   return { ...poi, ...Object.fromEntries(fields.map((field) =>
     [field, field === 'name' ? englishName(poi.name)
       : field === 'address' ? localizedAddress(poi.address, language, poi.streetAddress)
-        : row?.[field] && !row.stale[field] ? row[field] : poi[field]])) };
+        : descriptionDisplayable(poi, row) ? row.description : poi.description])) };
 }
 
 class PoiTranslationService {
@@ -74,8 +98,8 @@ class PoiTranslationService {
         const row = inspect(poi, rows.find((entry) => entry.poiId === poi.id && entry.language === target));
         return [target, Object.fromEntries(fields.map((field) => {
           if (!poi[field] || field !== 'description') return [field, 'ready'];
-          if (row?.[field] && !row.stale[field]) return [field,
-            row.descriptionUnverified ? 'unverified' : 'ready'];
+          if (descriptionReady(poi, row)) return [field, 'ready'];
+          if (descriptionDisplayable(poi, row)) return [field, 'unverified'];
           if (row?.qualityWarning) return [field, row.descriptionRejected ? 'rejected' : 'unverified'];
           if (row?.description) {
             if (job?.status === 'processing') return [field, 'processing'];
@@ -93,7 +117,7 @@ class PoiTranslationService {
         ['missing', 'pending', 'processing'].includes(translationStatus[target].description));
       const translationFallback = Object.fromEntries(languages.slice(1).map((target) => {
         const row = inspect(poi, rows.find((entry) => entry.poiId === poi.id && entry.language === target));
-        return [target, !!poi.description && !(!row?.stale.description && row?.description)];
+        return [target, !!poi.description && !descriptionDisplayable(poi, row)];
       }));
       if (!admin) {
         if (!includePublicTranslations) return chosen === 'vi' ? localized
@@ -155,48 +179,64 @@ class PoiTranslationService {
     }
     if (data.overwriteManual !== undefined && typeof data.overwriteManual !== 'boolean')
       throw fail('overwriteManual phải là boolean.', 400);
+    if (data.descriptionOnly !== undefined && typeof data.descriptionOnly !== 'boolean')
+      throw fail('descriptionOnly phải là boolean.', 400);
+    if (data.descriptionOnly && data.overwriteManual)
+      throw fail('Description-only retry cannot overwrite manual translations.', 400);
     const poi = await this.get(id);
     const previous = await translationsRepository.findByPoiIds([id]);
     const updates = [];
+    let translationRun;
+    const translator = () => (translationRun ||= descriptionProvider.createRun());
     for (const language of targets) {
       const current = previous.find((row) => row.language === language) || {};
-      const warning = inspect(poi, current)?.qualityWarning;
+      if (data.descriptionOnly && current.descriptionManual)
+        throw fail('Description-only retry cannot overwrite a manual translation.', 409,
+          'TRANSLATION_CONFLICT');
+      const inspected = inspect(poi, current);
+      const warning = inspected?.qualityWarning;
       const item = { poiId: id, language };
       const changed = [];
       for (const field of fields) {
         item[field] = current[field] || null;
         item[sourceKey(field)] = current[sourceKey(field)] || null;
         item[manualKey(field)] = !!current[manualKey(field)];
+        if (data.descriptionOnly && field !== 'description') continue;
         const deterministicValue = field === 'name' ? englishName(poi.name)
           : field === 'address' ? localizedAddress(poi.address, language, poi.streetAddress) : null;
         if (!poi[field] || (item[field] && currentHash(poi, item, field)
           && (deterministicValue === null || item[field] === deterministicValue)
           && !(field === 'description' && warning)
+          && !(field === 'description' && inspected?.descriptionUnverified
+            && !(data.skipDisplayableDescription && descriptionDisplayable(poi, inspected)))
           && !(language === 'en' && field === 'description'
             && invalidEnglishDescription(poi.description, item.description)))
           || (item[manualKey(field)] && !data.overwriteManual)) continue;
         changed.push(field);
       }
       for (const field of changed) {
-        const protectedName = language === 'en' && field === 'description' ? englishName(poi.name) : null;
-        const namedSource = protectedName && poi.name
-          ? poi[field].replace(new RegExp(poi.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu'), protectedName)
-          : poi[field];
-        const providerSource = language === 'en' && field === 'description'
-          ? namedSource.replace(/nước dùng/giu, 'broth') : namedSource;
-        const value = field === 'name' ? englishName(poi.name)
+        const prepared = field === 'description'
+          ? descriptionPipeline.prepare(poi[field], poi.name, language) : null;
+        let value = field === 'name' ? englishName(poi.name)
           : field === 'address' ? localizedAddress(poi.address, language, poi.streetAddress)
-            : (await provider.translate(providerSource, 'vi', language))?.text?.trim();
+            : (await translator().translate(prepared.providerSource, 'vi', language))?.text?.trim();
         if (!value || (field === 'name' && value.length > 255) || (field === 'address' && value.length > 500))
           throw fail('Dịch vụ trả bản dịch POI không hợp lệ.', 502);
-        if (field === 'description' && namedSource !== poi[field]
-          && !value.toLowerCase().includes(protectedName.toLowerCase()))
-          throw fail('Bản dịch mô tả làm mất tên địa điểm.', 502, 'UNTRUSTED_TRANSLATION');
+        if (prepared) {
+          const restored = descriptionPipeline.restore(value, prepared);
+          if (restored.reason) throw fail(restored.stage === 'token'
+            ? 'Bản dịch mô tả làm hỏng thuật ngữ được bảo vệ.'
+            : 'Bản dịch mô tả làm mất tên địa điểm.', 502, 'UNTRUSTED_TRANSLATION',
+          { translationLanguage: language, translationRule: restored.reason });
+          value = restored.text;
+        }
         const quality = field === 'description'
-          ? await checkDescription(poi[field], value, language, poi.name) : null;
+          ? await checkDescription(poi[field], value, language, poi.name, translator()) : null;
         item[field] = value;
         item[sourceKey(field)] = quality?.status === 'unverified'
-          ? unverifiedHash(poi[field]) : hash(poi[field]);
+          ? descriptionQuality.assessDisplay(poi[field], value, language, poi.name).allowed
+            ? displayableUnverifiedHash(poi[field]) : unverifiedHash(poi[field]) : field === 'description'
+            ? verifiedHash(poi[field]) : hash(poi[field]);
         item[manualKey(field)] = false;
       }
       updates.push({ item, changed });
@@ -219,7 +259,12 @@ class PoiTranslationService {
         item[manualKey(field)] = !!latestRow?.[manualKey(field)];
       }
     }
-    for (const { item, changed } of updates) if (changed.length) await translationsRepository.save(item);
+    for (const { item, changed } of updates) if (changed.length) {
+      if (data.descriptionOnly || changed.length === 1 && changed[0] === 'description') {
+        const original = previous.find((row) => row.language === item.language);
+        await translationsRepository.saveDescription(item, original);
+      } else await translationsRepository.save(item);
+    }
     return this.details(id);
   }
 }

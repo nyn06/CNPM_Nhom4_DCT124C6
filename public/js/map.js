@@ -70,7 +70,7 @@
         processing: 'poiDescriptionFallbackPending', failed: 'poiDescriptionFallbackFailed',
         rejected: 'poiDescriptionFallbackRejected',
         unverified: poi.translationFallback?.[language] === false
-          ? 'poiDescriptionUnverified' : 'poiDescriptionFallbackUnverified' }[state];
+          ? null : 'poiDescriptionFallbackUnverified' }[state];
       description.textContent = [poi.description.slice(0, 180), language !== 'vi' && key ? t(key) : '']
         .filter(Boolean).join(' ');
       content.append(description);
@@ -92,6 +92,7 @@
 
   function renderPois() {
     if (!map) return;
+    const openPoiId = markers.find(({ marker }) => marker.isPopupOpen())?.poi.id;
     poiLayer.clearLayers();
     radiusLayer.clearLayers();
     markers = [];
@@ -99,6 +100,7 @@
       const point = [poi.latitude, poi.longitude];
       const marker = window.L.marker(point).addTo(poiLayer);
       marker.bindPopup(popup(poi));
+      if (poi.id === openPoiId) marker.openPopup();
       window.L.circle(point, {
         radius: poi.geofenceRadius, color: '#50774d', weight: 2,
         fillColor: '#87ac7b', fillOpacity: 0.13, interactive: false,

@@ -27,7 +27,7 @@
       processing: 'poiDescriptionFallbackPending', failed: 'poiDescriptionFallbackFailed',
       rejected: 'poiDescriptionFallbackRejected',
       unverified: poi.translationFallback?.[language] === false
-        ? 'poiDescriptionUnverified' : 'poiDescriptionFallbackUnverified' }[status];
+        ? null : 'poiDescriptionFallbackUnverified' }[status];
     return [poi.description, language !== 'vi' && key ? t(key) : ''].filter(Boolean).join('\n');
   };
   const t = (key, params) => {

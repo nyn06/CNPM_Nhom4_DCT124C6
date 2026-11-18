@@ -24,7 +24,8 @@ class Repository {
 
   complete(job) {
     const current = jobs.get(job.poiId);
-    if (current?.revision === job.revision && current.status === 'processing') {
+    if (current?.revision === job.revision && current.attempts === job.attempts
+      && current.status === 'processing') {
       current.status = 'done';
       current.leaseUntil = null;
     }
@@ -32,9 +33,11 @@ class Repository {
 
   fail(job, code) {
     const current = jobs.get(job.poiId);
-    if (current?.revision === job.revision && current.status === 'processing') {
+    if (current?.revision === job.revision && current.attempts === job.attempts
+      && current.status === 'processing') {
       current.status = current.attempts >= 3
-        || ['UNTRUSTED_TRANSLATION', 'UNVERIFIED_TRANSLATION', 'PROVIDER_AUTH'].includes(code)
+        || ['UNTRUSTED_TRANSLATION', 'UNVERIFIED_TRANSLATION', 'PROVIDER_AUTH',
+          'PROVIDER_QUOTA', 'PROVIDER_CONFIG'].includes(code)
         ? 'failed' : 'pending';
       current.nextAttemptAt = Date.now() + (code === 'PROVIDER_RATE_LIMIT'
         ? current.attempts === 1 ? 60000 : 600000 : current.attempts === 1 ? 10000 : 60000);
