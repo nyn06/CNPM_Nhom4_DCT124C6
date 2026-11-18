@@ -20,8 +20,7 @@ beforeEach(() => {
 });
 afterEach(() => { jest.restoreAllMocks(); process.env = { ...initialEnv }; });
 
-it.each([15, 60, 120])('creates %i minute voucher with metadata, random code and local QR', async (minutes) => {
-  const response = await create(minutes);
+it.each([15, 30, 60])('creates %i minute voucher with metadata, random code and local QR', async (minutes) => {  const response = await create(minutes);
   expect(response.status).toBe(201);
   expect(response.body).toMatchObject({
     durationMinutes: minutes, status: 'unused', redeemedAt: null, expiresAt: null,
@@ -37,8 +36,7 @@ it.each([15, 60, 120])('creates %i minute voucher with metadata, random code and
   expect(response.body.qrSvg).toBe(await QRCode.toString(url.href, { type: 'svg', errorCorrectionLevel: 'M', margin: 4 }));
 });
 
-it.each([0, 1, 30, 240, -15, '60', null, {}, []])('rejects duration %j without creating a voucher', async (minutes) => {
-  await create(minutes).expect(400);
+it.each([0, 1, 45, 120, 240, -15, '60', null, {}, []])('rejects duration %j without creating a voucher', async (minutes) => {  await create(minutes).expect(400);
   expect(repository.findAllVouchers()).toHaveLength(0);
 });
 
