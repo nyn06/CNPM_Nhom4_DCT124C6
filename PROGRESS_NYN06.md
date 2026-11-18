@@ -23,24 +23,46 @@ Nội dung tập trung vào các chức năng đã triển khai, thay đổi k�
 | 5 | 05–11/10/2026 | Xây dựng POI, GPS geofence, WebApp demo; phát triển chức năng dịch đa ngôn ngữ, phát audio, tự động thuyết minh theo GPS và giao diện quản trị POI. |
 | 6 | 12–18/10/2026 | Phát triển QR voucher, kích hoạt quyền tham quan và kiểm soát thời gian truy cập của du khách. |
 | 7 | 19–25/10/2026 | Phát triển xác thực, phân quyền RBAC và giao diện Admin; tích hợp SQL Server, migration, kiểm thử tích hợp, bản đồ và geocoding. |
-![Minh chứng ngày 19/10](docs/images/1910.jpg)
-
-![Minh chứng ngày 20/10](docs/images/2010.jpg)
-
-![Minh chứng ngày 21/10](docs/images/2110.jpg)
-
-![Minh chứng ngày 22/10](docs/images/2210.jpg)
 | 8 | 26/10–01/11/2026 | Hiển thị khoảng cách POI, sắp xếp các địa điểm gần nhất; phát triển giao diện Admin đa ngôn ngữ, Dashboard, quản lý voucher và cơ chế dịch POI. |
-![Minh chứng ngày 28/10 - Ảnh 1](docs/images/2810-1.jpg)
-
-![Minh chứng ngày 28/10 - Ảnh 2](docs/images/2810-2.jpg)
-
-![Minh chứng ngày 28/10 - Ảnh 3](docs/images/2810.jpg)
 | 9 | 02–08/11/2026 | Không có commit. |
 | 10 | 09–15/11/2026 | Điều chỉnh CI để kiểm thử SQL Server trên database riêng `AutoNarrationDBTest`; sao lưu trạng thái Git trước khi tích hợp. |
 | 11 | 16–19/11/2026 | Tích hợp các nhánh chức năng, sửa kiểm thử Frontend sau merge, cập nhật Node.js cho CI và điều chỉnh bộ kiểm thử đa ngôn ngữ QR voucher. |
 
-## 3. Các commit tiêu biểu
+## 3. Hình ảnh minh chứng quá trình phát triển
+
+### 3.1. Tuần 7 – Xác thực, SQL Server và bản đồ (19–25/10/2026)
+
+![Minh chứng ngày 19/10](docs/images/1910.jpg)
+
+*Hình 1. Minh chứng công việc ngày 19/10/2026.*
+
+![Minh chứng ngày 20/10](docs/images/2010.jpg)
+
+*Hình 2. Minh chứng công việc ngày 20/10/2026.*
+
+![Minh chứng ngày 21/10](docs/images/2110.jpg)
+
+*Hình 3. Minh chứng công việc ngày 21/10/2026.*
+
+![Minh chứng ngày 22/10](docs/images/2210.jpg)
+
+*Hình 4. Minh chứng công việc ngày 22/10/2026.*
+
+### 3.2. Tuần 8 – Giao diện quản trị và đa ngôn ngữ (26/10–01/11/2026)
+
+![Minh chứng ngày 28/10 - Ảnh 1](docs/images/2810-1.jpg)
+
+*Hình 5. Minh chứng công việc ngày 28/10/2026.*
+
+![Minh chứng ngày 28/10 - Ảnh 2](docs/images/2810-2.jpg)
+
+*Hình 6. Minh chứng công việc ngày 28/10/2026.*
+
+![Minh chứng ngày 28/10 - Ảnh 3](docs/images/2810.jpg)
+
+*Hình 7. Minh chứng công việc ngày 28/10/2026.*
+
+## 4. Các commit tiêu biểu
 
 | Ngày | Commit | Nội dung |
 |---|---|---|
@@ -59,7 +81,7 @@ Nội dung tập trung vào các chức năng đã triển khai, thay đổi k�
 | 16/11/2026 | [`7cd2844`](https://github.com/nyn06/CNPM_Nhom4_DCT124C6/commit/7cd284491502d04b76111b741abfce3d9175c9f7) | Sửa cấu hình Node.js cho thư viện Sharp |
 | 18/11/2026 | [`50042fd`](https://github.com/nyn06/CNPM_Nhom4_DCT124C6/commit/50042fde40097bfc965072bf80151e2dbb5333da) | Điều chỉnh kiểm thử đa ngôn ngữ QR voucher |
 
-## 4. Ghi chú về lịch sử phát triển
+## 5. Ghi chú về lịch sử phát triển
 
 - Chỉ thống kê các commit có tác giả là `nyn06`.
 - Các commit merge được xem là hoạt động tích hợp mã nguồn, không tự động tính chức năng của thành viên khác thành đóng góp cá nhân.
@@ -67,7 +89,7 @@ Nội dung tập trung vào các chức năng đã triển khai, thay đổi k�
 - Thời gian được xác định từ lịch sử Git, có thể khác thời điểm thực tế viết code.
 - Có thể nhấn trực tiếp vào mã commit để xem các file và dòng code thay đổi trên GitHub.
 
-## 5. Kết luận
+## 6. Kết luận
 
 Lịch sử commit phản ánh quá trình phát triển dự án từ khởi tạo Backend, xây dựng chức năng GPS và thuyết minh đa ngôn ngữ đến triển khai giao diện quản trị, tích hợp cơ sở dữ liệu SQL Server và thiết lập CI/CD.
 
