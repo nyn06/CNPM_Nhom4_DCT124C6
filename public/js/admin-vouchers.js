@@ -42,8 +42,19 @@
   function row(item, index, page) {
     const tr = document.createElement('tr');
     const values = [(page - 1) * 10 + index + 1, item.id,
-      item.payment ? `${item.payment.durationMinutes} phút · ${item.payment.amountVnd.toLocaleString('vi-VN')} ₫ · ${item.payment.status === 'paid' ? 'Đã thanh toán' : 'Chờ thanh toán'}`
-        : item.durationMinutes === null ? 'Chưa chọn gói' : (window.ADMIN_I18N?.t('js.admin_vouchers.005', [item.durationMinutes]) ?? `${item.durationMinutes} phút`),
+      item.payment
+  ? window.ADMIN_I18N.t('js.admin_vouchers.033', [
+      item.payment.durationMinutes,
+      item.payment.amountVnd.toLocaleString('vi-VN'),
+      window.ADMIN_I18N.t(
+        item.payment.status === 'paid'
+          ? 'js.admin_vouchers.030'
+          : 'js.admin_vouchers.031'
+      )
+    ])
+  : item.durationMinutes === null
+    ? window.ADMIN_I18N.t('js.admin_vouchers.029')
+    : window.ADMIN_I18N.t('js.admin_vouchers.005', [item.durationMinutes]),
       date(item.createdAt), date(item.redeemedAt), date(item.expiresAt)];
     for (const value of values) {
       const td = document.createElement('td');
@@ -85,7 +96,7 @@
     const created = data.items.find((item) => item.id === createdVoucherId);
     if (created) {
       createdVoucher = { durationMinutes: created.durationMinutes, status: created.status };
-      byId('created-voucher-status').textContent = created.durationMinutes === null ? 'QR chưa chọn gói · Chờ du khách mua vé.'
+      byId('created-voucher-status').textContent = created.durationMinutes === null ? (window.ADMIN_I18N?.t('js.admin_vouchers.028') ?? 'QR chưa chọn gói · Chờ du khách mua vé.')
         : (window.ADMIN_I18N?.t('js.admin_vouchers.011', [created.durationMinutes, labels()[created.status]]) ?? `Vé ${created.durationMinutes} phút · ${labels()[created.status]}.`);
     }
     byId('voucher-rows').replaceChildren(...data.items.map((item, index) => row(item, index, data.page)));
@@ -155,7 +166,7 @@
       byId('activation-code').value = voucher.activationCode;
       createdVoucherId = voucher.id;
       createdVoucher = { durationMinutes: voucher.durationMinutes, status: 'unused' };
-      byId('created-voucher-status').textContent = voucher.durationMinutes === null ? 'QR chưa chọn gói · Chờ du khách mua vé.'
+      byId('created-voucher-status').textContent = voucher.durationMinutes === null ? (window.ADMIN_I18N?.t('js.admin_vouchers.028') ?? 'QR chưa chọn gói · Chờ du khách mua vé.')
         : (window.ADMIN_I18N?.t('js.admin_vouchers.020', [voucher.durationMinutes]) ?? `Vé ${voucher.durationMinutes} phút · Chưa kích hoạt.`);
       byId('voucher-result').hidden = false;
       notice('voucher-message', (window.ADMIN_I18N?.t('js.admin_vouchers.021') ?? 'Đã tạo vé. Lưu QR, URL hoặc mã kích hoạt ngay; danh sách không tiết lộ lại mã vé.'), 'success');
@@ -179,10 +190,10 @@
     else if (state.controller) notice('voucher-list-status', window.ADMIN_I18N.t('js.admin_vouchers.009'));
     if (createdVoucher && !byId('voucher-result').hidden) {
       byId('created-voucher-status').textContent = createdVoucher.durationMinutes === null
-        ? 'QR chưa chọn gói · Chờ du khách mua vé.'
+        ? (window.ADMIN_I18N?.t('js.admin_vouchers.028') ?? 'QR chưa chọn gói · Chờ du khách mua vé.')
         : window.ADMIN_I18N.t('js.admin_vouchers.011', [createdVoucher.durationMinutes, labels()[createdVoucher.status]]);
     }
-    if (byId('voucher-result').hidden) notice('voucher-message', 'Mỗi QR chỉ dùng một lần; thời gian bắt đầu khi du khách bấm Bắt đầu tham quan.');
+    if (byId('voucher-result').hidden) notice('voucher-message', window.ADMIN_I18N.t('js.admin_vouchers.032'));
     else notice('voucher-message', window.ADMIN_I18N.t('js.admin_vouchers.021'), 'success');
   });
   byId('voucher-form').addEventListener('submit', create);

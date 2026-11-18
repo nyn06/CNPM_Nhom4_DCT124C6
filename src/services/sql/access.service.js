@@ -2,7 +2,7 @@
 const accessRepository = require('../../repositories/access.repository');
 const shortCode = require('../activation-code');
 
-const DURATIONS = Object.freeze([15, 60, 120]);
+const DURATIONS = Object.freeze([15, 30, 60]);
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/;
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const failure = (message, statusCode, code) => Object.assign(new Error(message), { statusCode, code });
@@ -13,7 +13,7 @@ class AccessService {
   async createVoucher(data, requestOrigin) {
     if (!data || typeof data !== 'object' || Array.isArray(data)
       || (data.durationMinutes !== undefined && !DURATIONS.includes(data.durationMinutes))) {
-      throw failure('durationMinutes chỉ nhận 15, 60 hoặc 120.', 400, 'INVALID_DURATION');
+      throw failure('durationMinutes chỉ nhận 15, 30 hoặc 60.', 400, 'INVALID_DURATION');
     }
     let origin;
     try {

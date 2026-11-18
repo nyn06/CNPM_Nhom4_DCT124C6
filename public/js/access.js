@@ -68,7 +68,7 @@
   function accept(data, accessToken) {
     const serverRemaining = Date.parse(data?.expiresAt) - Date.parse(data?.serverTime);
     const remaining = serverRemaining - Math.max(0, performance.now() - requestStartedAt);
-    if (!/^[a-f0-9]{64}$/.test(accessToken || '') || ![15, 30, 60, 120].includes(data?.durationMinutes)
+    if (!/^[a-f0-9]{64}$/.test(accessToken || '') || ![15, 30, 60].includes(data?.durationMinutes)
       || !Number.isFinite(remaining) || remaining <= 0 || serverRemaining > data.durationMinutes * 60000) {
       throw new Error(t('invalidSessionResponse'));
     }

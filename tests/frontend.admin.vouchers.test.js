@@ -4,6 +4,8 @@ const vm = require('vm');
 
 const html = fs.readFileSync(path.join(__dirname, '../public/admin.html'), 'utf8');
 const script = fs.readFileSync(path.join(__dirname, '../public/js/admin-vouchers.js'), 'utf8');
+const translationsScript = fs.readFileSync(path.join(__dirname, '../public/js/admin-translations.js'), 'utf8');
+const i18nScript = fs.readFileSync(path.join(__dirname, '../public/js/admin-i18n.js'), 'utf8');
 const id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const now = '2026-10-27T10:00:00.000Z';
 const element = () => ({
@@ -18,7 +20,7 @@ const element = () => ({
 });
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
-async function setup(withI18n = false) {
+async function setup() {
   const elements = Object.fromEntries([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => [match[1], element()]));
   elements['voucher-search-duration'].value = 'all';
   elements['voucher-filter'].value = 'all';
@@ -45,15 +47,12 @@ async function setup(withI18n = false) {
   const auth = { ready: Promise.resolve({ role: 'ADMIN' }), current: () => ({ role: 'ADMIN' }),
     headers: () => ({ 'X-CSRF-Token': 'fixture' }), handle: jest.fn(), onLost: jest.fn() };
   const window = { ADMIN_AUTH: auth, addEventListener: jest.fn() };
-  if (withI18n) {
-    vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../public/js/admin-translations.js'), 'utf8'), { window });
-    let language = 'vi';
-    let listener;
-    window.ADMIN_I18N = { t: (key, params = []) => (window.ADMIN_TRANSLATIONS[language][key] || key)
-      .replace(/\{(\d+)\}/g, (_, index) => String(params[index])), language: () => language,
-    onChange: (callback) => { listener = callback; }, setLanguage: (next) => { language = next; listener(next); } };
-  }
-  vm.runInNewContext(script, { document: { getElementById: (name) => elements[name], createElement: element },
+  const document = { documentElement: { lang: 'vi' }, getElementById: (name) => elements[name],
+    createElement: element, querySelectorAll: () => [], addEventListener: jest.fn() };
+  vm.runInNewContext(translationsScript, { window });
+  vm.runInNewContext(i18nScript, { window, document,
+    localStorage: { getItem: () => null, setItem: jest.fn() } });
+  vm.runInNewContext(script, { document,
     window, fetch, navigator: { clipboard: { writeText: jest.fn() } },
     URL, URLSearchParams, Date, Number, AbortController, encodeURIComponent, setTimeout, clearTimeout });
   await tick();
@@ -61,7 +60,7 @@ async function setup(withI18n = false) {
 }
 
 test('malformed voucher date shows localized inline feedback without searching', async () => {
-  const ui = await setup(true);
+  const ui = await setup();
   const before = ui.state.requests.length;
   ui.elements['voucher-search-date'].validity = { badInput: true };
   ui.elements['voucher-search-form'].events.submit({ preventDefault: jest.fn() });
@@ -173,7 +172,7 @@ test('làm mới phản ánh vé chuyển từ chưa kích hoạt sang đang s�
 });
 
 test('bốn ngôn ngữ dịch trạng thái vé từ dữ liệu đang có mà không gọi API', async () => {
-  const ui = await setup(true);
+  const ui = await setup();
   const requests = ui.state.requests.length;
   for (const language of ['vi', 'en', 'ja', 'ko']) {
     ui.window.ADMIN_I18N.setLanguage(language);
