@@ -300,7 +300,3 @@ Workflow GitHub Actions được kích hoạt khi `push` hoặc tạo `pull requ
 - **Mục đích:** Xây dựng và kiểm chứng website hướng dẫn du lịch sử dụng dữ liệu địa điểm, bản đồ, dịch thuật và thuyết minh đa ngôn ngữ.
 - **Mã nguồn:** [CNPM_Nhom4_DCT124C6](https://github.com/nyn06/CNPM_Nhom4_DCT124C6).
 
----
-
-*Tài liệu README mô tả chức năng và môi trường kiểm chứng của phiên bản đồ án. Các tính năng hoặc kết quả triển khai trong tương lai sẽ được cập nhật khi có bằng chứng thực tế.*
-
