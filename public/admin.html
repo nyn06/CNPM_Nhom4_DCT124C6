@@ -271,9 +271,11 @@
 
 <!-- Hình ảnh địa điểm POI -->
 <section id="poi-image-section" aria-labelledby="poi-image-title" hidden>
-  <h3 id="poi-image-title">Hình ảnh địa điểm</h3>
+  <h3 id="poi-image-title" data-admin-i18n="poi.image.title">
+    Hình ảnh địa điểm
+  </h3>
 
-  <p class="helper">
+  <p class="helper" data-admin-i18n="poi.image.help">
     Tải ảnh JPG, PNG hoặc WebP. Dung lượng tối đa 5 MB.
   </p>
 
@@ -281,17 +283,20 @@
     <img
       id="poi-image-preview"
       alt="Hình ảnh địa điểm"
+      data-admin-i18n-alt="poi.image.alt"
       style="display:block;max-width:100%;max-height:260px;object-fit:contain;border-radius:12px;"
     >
   </div>
 
-  <p id="poi-image-empty" class="helper">
+  <p id="poi-image-empty" class="helper" data-admin-i18n="poi.image.empty">
     Địa điểm này chưa có hình ảnh.
   </p>
 
   <div class="admin-form-grid">
     <div class="wide">
-      <label for="poi-image-file">Chọn hình ảnh</label>
+      <label for="poi-image-file" data-admin-i18n="poi.image.select">
+        Chọn hình ảnh
+      </label>
       <input
         id="poi-image-file"
         type="file"
@@ -304,6 +309,7 @@
     id="poi-image-upload"
     type="button"
     class="button secondary"
+    data-admin-i18n="poi.image.upload"
   >
     Tải ảnh lên
   </button>

@@ -134,9 +134,10 @@
 
     const isEditing = mode === 'edit' && !!selectedPoi;
 
-    section.hidden = !isEditing;
-    fileInput.value = '';
-    message('poi-image-status', '');
+    section.hidden = mode !== 'new' && !isEditing;
+byId('poi-image-upload').hidden = mode === 'new';
+fileInput.value = '';
+message('poi-image-status', '');
 
     const imageUrl = isEditing ? selectedPoi.imageUrl : null;
     const validImageUrl =
@@ -154,6 +155,65 @@
     }
   }
 
+  async function uploadImageForPoi(poiId, file) {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
+  if (!allowedTypes.includes(file.type)) {
+    throw safeError(window.ADMIN_I18N.t('poi.image.error.type'));
+  }
+
+  if (file.size === 0 || file.size > 5 * 1024 * 1024) {
+    throw safeError(window.ADMIN_I18N.t('poi.image.error.size'));
+  }
+
+  const formData = new FormData();
+  formData.append('image', file);
+
+  const controller = new AbortController();
+  controllers.add(controller);
+
+  const timer = setTimeout(() => controller.abort(), 30000);
+
+  try {
+    const response = await fetch(`${poiUrl(poiId)}/image`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        ...auth.headers('POST')
+      },
+      body: formData
+    });
+
+    auth.handle(response);
+
+    if (!response.ok) {
+      throw apiError(response.status);
+    }
+
+    const result = await response.json();
+
+    if (
+      result.poiId !== poiId ||
+      typeof result.imageUrl !== 'string' ||
+      !/^\/uploads\/pois\/[a-zA-Z0-9_-]+\.(jpg|jpeg|png|webp)$/.test(result.imageUrl)
+    ) {
+      throw safeError(window.ADMIN_I18N.t('poi.image.error.invalidUrl'));
+    }
+
+    return result.imageUrl;
+  } catch (error) {
+    if (controller.signal.aborted && !error.safe) {
+      throw safeError(window.ADMIN_I18N.t('poi.image.error.timeout'));
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    controllers.delete(controller);
+  }
+}
   async function uploadPoiImage() {
     if (mutating || selectionLoading || mode !== 'edit' || !selectedPoi) return;
 
@@ -162,21 +222,21 @@
     const file = fileInput.files?.[0];
 
     if (!file) {
-      message('poi-image-status', 'Vui lòng chọn hình ảnh trước khi tải lên.', 'error');
-      return;
-    }
+  message('poi-image-status', window.ADMIN_I18N.t('poi.image.error.noFile'), 'error');
+  return;
+}
 
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
     if (!allowedTypes.includes(file.type)) {
-      message('poi-image-status', 'Chỉ chấp nhận ảnh JPG, PNG hoặc WebP.', 'error');
-      return;
-    }
+  message('poi-image-status', window.ADMIN_I18N.t('poi.image.error.type'), 'error');
+  return;
+}
 
     if (file.size > 5 * 1024 * 1024 || file.size === 0) {
-      message('poi-image-status', 'Dung lượng ảnh phải lớn hơn 0 và không vượt quá 5 MB.', 'error');
-      return;
-    }
+  message('poi-image-status', window.ADMIN_I18N.t('poi.image.error.size'), 'error');
+  return;
+}
 
     const poiId = selectedPoi.id;
     const formData = new FormData();
@@ -188,7 +248,7 @@
 
     uploadButton.disabled = true;
     fileInput.disabled = true;
-    message('poi-image-status', 'Đang tải hình ảnh lên server...');
+    message('poi-image-status', window.ADMIN_I18N.t('poi.image.uploading'));
 
     try {
       const response = await fetch(
@@ -219,7 +279,7 @@
         typeof result.imageUrl !== 'string' ||
         !/^\/uploads\/pois\/[a-zA-Z0-9_-]+\.(jpg|jpeg|png|webp)$/.test(result.imageUrl)
       ) {
-        throw safeError('Server trả về đường dẫn hình ảnh không hợp lệ.');
+        throw safeError(window.ADMIN_I18N.t('poi.image.error.invalidUrl'));
       }
 
       if (selectedPoi?.id !== poiId || mode !== 'edit' || disposed) return;
@@ -230,7 +290,7 @@
       };
 
       renderPoiImage();
-      message('poi-image-status', 'Tải hình ảnh POI thành công.', 'success');
+      message('poi-image-status', window.ADMIN_I18N.t('poi.image.success'), 'success');
 
     } catch (error) {
       if (selectedPoi?.id === poiId && !disposed) {
@@ -239,8 +299,8 @@
           error.safe
             ? error.message
             : controller.signal.aborted
-              ? 'Tải ảnh quá thời gian chờ. Hãy kiểm tra lại trước khi thử tiếp.'
-              : 'Không thể tải hình ảnh lên server. Vui lòng thử lại.',
+              ? window.ADMIN_I18N.t('poi.image.error.timeout')
+              : window.ADMIN_I18N.t('poi.image.error.server'),
           'error'
         );
       }
@@ -743,15 +803,45 @@
     let body;
     try { body = readPoiForm(); } catch (error) { message('action-status', error.message, 'error'); return; }
     const id = selectedPoi?.id;
-    const detailsChanged = !id || ['name', 'description', 'address'].some((field) => body[field] !== selectedPoi[field]);
+
+// Giữ ảnh đã chọn khi tạo POI mới.
+// File input sẽ bị xóa khi giao diện chuyển sang POI vừa tạo.
+const pendingImage = !id
+  ? byId('poi-image-file').files?.[0] ?? null
+  : null;
+
+const detailsChanged = !id || ['name', 'description', 'address'].some((field) => body[field] !== selectedPoi[field]);
     const viDraft = id && viDirty() ? byId('vi-text').value : null;
     mutate(id ? (window.ADMIN_I18N?.t('js.admin.053') ?? 'Đang lưu thay đổi…') : (window.ADMIN_I18N?.t('js.admin.054') ?? 'Đang tạo địa điểm…'), async () => {
       const poi = await requestJson(id ? poiUrl(id) : '/api/pois', { method: id ? 'PUT' : 'POST', body });
       if (disposed) return '';
       if (typeof poi?.id !== 'string') throw safeError((window.ADMIN_I18N?.t('js.admin.055') ?? 'Địa điểm đã lưu nhưng phản hồi không hợp lệ. Hãy tải lại danh sách.'));
-      await loadPois();
-      const refreshed = await selectPoi(poi.id, true);
-      if (detailsChanged) scheduleTranslationRefresh();
+      let imageUploadError = null;
+
+// Tải ảnh đã chọn sau khi tạo POI thành công.
+if (!id && pendingImage) {
+  try {
+    message('action-status', window.ADMIN_I18N.t('poi.image.uploading'));
+    await uploadImageForPoi(poi.id, pendingImage);
+  } catch (error) {
+    imageUploadError = error;
+  }
+}
+
+await loadPois();
+const refreshed = await selectPoi(poi.id, true);
+
+if (imageUploadError && !disposed) {
+  message(
+    'poi-image-status',
+    imageUploadError.safe
+      ? imageUploadError.message
+      : window.ADMIN_I18N.t('poi.image.error.server'),
+    'error'
+  );
+}
+
+if (detailsChanged) scheduleTranslationRefresh();
       if (viDraft !== null && selectedPoi?.id === id) {
         byId('vi-text').value = viDraft;
         message('draft-status', (window.ADMIN_I18N?.t('js.admin.056') ?? 'Có nội dung VI chưa lưu. Hãy lưu trước khi dịch hoặc tạo audio.'));
