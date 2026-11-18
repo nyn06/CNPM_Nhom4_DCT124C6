@@ -16,7 +16,8 @@ const element = () => ({
   replaceChildren(...children) { this.children = children; },
   append(child) { this.children.push(child); },
   scrollIntoView() {},
-  focus() {},
+  focus: jest.fn(),
+  select: jest.fn(),
 });
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
@@ -46,6 +47,7 @@ async function setup() {
   });
   const auth = { ready: Promise.resolve({ role: 'ADMIN' }), current: () => ({ role: 'ADMIN' }),
     headers: () => ({ 'X-CSRF-Token': 'fixture' }), handle: jest.fn(), onLost: jest.fn() };
+  const clipboard = {writeText: jest.fn()};
   const window = { ADMIN_AUTH: auth, addEventListener: jest.fn() };
   const document = { documentElement: { lang: 'vi' }, getElementById: (name) => elements[name],
     createElement: element, querySelectorAll: () => [], addEventListener: jest.fn() };
@@ -53,10 +55,10 @@ async function setup() {
   vm.runInNewContext(i18nScript, { window, document,
     localStorage: { getItem: () => null, setItem: jest.fn() } });
   vm.runInNewContext(script, { document,
-    window, fetch, navigator: { clipboard: { writeText: jest.fn() } },
+    window, fetch, navigator: { clipboard },
     URL, URLSearchParams, Date, Number, AbortController, encodeURIComponent, setTimeout, clearTimeout });
   await tick();
-  return { elements, state, fetch, window };
+  return { elements, state, fetch, window, clipboard };
 }
 
 test('malformed voucher date shows localized inline feedback without searching', async () => {
@@ -106,11 +108,16 @@ test('lọc, tìm kiếm, trạng thái rỗng và lỗi API không hiển thị
   await tick();
   expect(ui.elements['voucher-rows'].children).toHaveLength(0);
   expect(ui.elements['voucher-list-status'].textContent).toContain('Không có kết quả');
-  ui.state.fail = true;
-  ui.elements['reload-vouchers'].events.click();
-  await tick();
-  expect(ui.elements['voucher-stat-total'].textContent).toBe('—');
-  expect(ui.elements['voucher-list-status'].dataset.tone).toBe('error');
+ui.state.fail = true;
+ui.elements['reload-vouchers'].events.click();
+await tick();
+expect(ui.elements['voucher-stat-total'].textContent).toBe('1');
+expect(ui.elements['voucher-list-status'].dataset.tone).toBe('error');
+ui.window.ADMIN_I18N.setLanguage('en');
+expect(ui.elements['voucher-stat-total'].textContent).toBe('1');
+expect(ui.elements['voucher-list-status'].textContent)
+  .toBe(ui.window.ADMIN_TRANSLATIONS.en['js.admin_vouchers.007']);
+expect(ui.elements['voucher-list-status'].dataset.tone).toBe('error');
 });
 
 test('phân trang chuyển đúng trang và giới hạn nút ở trang cuối', async () => {
@@ -181,4 +188,64 @@ test('bốn ngôn ngữ dịch trạng thái vé từ dữ liệu đang có mà 
     expect(ui.elements['voucher-search-duration'].value).toBe('all');
   }
   expect(ui.state.requests).toHaveLength(requests);
+});
+test('copy failure selects activation URL and preserves translated feedback', async () => {
+  const ui = await setup();
+
+  const input = ui.elements['activation-url'];
+
+  input.value = 'http://localhost:3000/?voucher=test';
+
+  // Giả lập Clipboard API thất bại.
+  ui.clipboard.writeText.mockRejectedValue(
+    new Error('Clipboard unavailable')
+  );
+
+  // Nhấn nút Copy URL.
+  await ui.elements['copy-voucher-url'].events.click();
+
+  // Nội dung phải được chọn để sao chép thủ công.
+  expect(input.focus).toHaveBeenCalledTimes(1);
+  expect(input.select).toHaveBeenCalledTimes(1);
+
+  // Thông báo tiếng Việt đúng với lỗi sao chép.
+  expect(ui.elements['voucher-message'].textContent)
+    .toBe(ui.window.ADMIN_TRANSLATIONS.vi['js.admin_vouchers.024']);
+
+  expect(ui.elements['voucher-message'].dataset.tone).toBe('info');
+
+  // Chuyển sang tiếng Anh.
+  ui.window.ADMIN_I18N.setLanguage('en');
+
+  // Vẫn là thông báo lỗi sao chép, không biến thành thông báo khác.
+  expect(ui.elements['voucher-message'].textContent)
+    .toBe(ui.window.ADMIN_TRANSLATIONS.en['js.admin_vouchers.024']);
+
+  expect(ui.elements['voucher-message'].dataset.tone).toBe('info');
+});
+test('copy failure selects activation code and preserves translated feedback', async () => {
+  const ui = await setup();
+
+  const input = ui.elements['activation-code'];
+
+  input.value = 'TEST123';
+
+  ui.clipboard.writeText.mockRejectedValue(
+    new Error('Clipboard unavailable')
+  );
+
+  await ui.elements['copy-activation-code'].events.click();
+
+  expect(input.focus).toHaveBeenCalledTimes(1);
+  expect(input.select).toHaveBeenCalledTimes(1);
+
+  expect(ui.elements['voucher-message'].textContent)
+    .toBe(ui.window.ADMIN_TRANSLATIONS.vi['js.admin_vouchers.026']);
+
+  ui.window.ADMIN_I18N.setLanguage('ja');
+
+  expect(ui.elements['voucher-message'].textContent)
+    .toBe(ui.window.ADMIN_TRANSLATIONS.ja['js.admin_vouchers.026']);
+
+  expect(ui.elements['voucher-message'].dataset.tone).toBe('info');
 });

@@ -162,17 +162,59 @@
       const actionsCell = document.createElement('td');
       const actions = document.createElement('div'); actions.className = 'account-row-actions';
       const save = makeButton(t('js.accounts.010'), 'secondary', () => {
-        if (own || role.value === account.role) return;
-        mutate(() => request(`/api/accounts/${encodeURIComponent(account.id)}`, 'PATCH', { role: role.value }), 'js.accounts.011');
+        if (own || role.value === account.role || busy) return;
+
+        const confirmed = window.confirm(
+          t('js.accounts.034', [
+            account.username,
+            roleName(account.role),
+            roleName(role.value)
+          ])
+        );
+
+        if (!confirmed) {
+          role.value = account.role;
+          save.disabled = true;
+          return;
+        }
+
+        mutate(
+          () => request(
+            `/api/accounts/${encodeURIComponent(account.id)}`,
+            'PATCH',
+            { role: role.value }
+          ),
+          'js.accounts.011'
+        );
       });
       save.disabled = true;
       if (own) save.setAttribute('title', t('html.admin.176'));
       role.addEventListener('change', () => { save.disabled = own || role.value === account.role || busy; });
-      const lock = makeButton(t(account.isLocked ? 'html.admin.177' : 'html.admin.178'), 'secondary', () => {
-        if (own) return;
-        mutate(() => request(`/api/accounts/${encodeURIComponent(account.id)}`, 'PATCH', { isLocked: !account.isLocked }),
-          account.isLocked ? 'html.admin.179' : 'html.admin.180');
-      });
+      const lock = makeButton(
+        t(account.isLocked ? 'html.admin.177' : 'html.admin.178'),
+        'secondary',
+        () => {
+          if (own || busy) return;
+
+          const confirmed = window.confirm(
+            t(
+              account.isLocked ? 'js.accounts.036' : 'js.accounts.035',
+              [account.username]
+            )
+          );
+
+          if (!confirmed) return;
+
+          mutate(
+            () => request(
+              `/api/accounts/${encodeURIComponent(account.id)}`,
+              'PATCH',
+              { isLocked: !account.isLocked }
+            ),
+            account.isLocked ? 'html.admin.179' : 'html.admin.180'
+          );
+        }
+      );
       lock.disabled = own;
       if (own) lock.setAttribute('title', t('html.admin.181'));
       const password = makeButton(t(own ? 'html.admin.173' : 'html.admin.174'), 'secondary', () => openModal(account, password));
