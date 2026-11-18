@@ -26,7 +26,17 @@ function environment(html, fetch, auth) {
     }
   }
   const events = {};
-  const window = { ADMIN_AUTH: auth, location: { replace: jest.fn(), reload: jest.fn() }, addEventListener(name, fn) { (events[name] ||= []).push(fn); } };
+  const window = {
+    ADMIN_AUTH: auth,
+    confirm: jest.fn(() => true),
+    location: {
+      replace: jest.fn(),
+      reload: jest.fn()
+    },
+    addEventListener(name, fn) {
+      (events[name] ||= []).push(fn);
+    }
+  };
   const storage = { getItem: jest.fn(() => { throw new Error('No storage permitted'); }), setItem: jest.fn(() => { throw new Error('No storage permitted'); }) };
   const context = { document: { getElementById: (id) => elements[id], createElement: element, createTextNode: (text) => ({ textContent: text }) }, window,
     fetch, localStorage: storage, sessionStorage: storage, AbortController, TextEncoder, Date, performance, TypeError, SyntaxError, setTimeout, clearTimeout, URL, encodeURIComponent };
@@ -260,7 +270,18 @@ it('accounts list uses textContent; creation sends only intended fields and clea
   expect(options.headers['X-CSRF-Token']).toBe(csrf);
   expect(ui.elements['account-password'].value).toBe(''); expect(ui.storage.setItem).not.toHaveBeenCalled();
 });
-
+it('account reload failure preserves the last successful list', async () => {
+  const ui = await accountsUi('ADMIN', true);
+  expect(ui.elements['account-rows'].children).toHaveLength(1);
+  expect(ui.elements['account-stat-total'].textContent).toBe('1');
+  ui.state.status = 500;
+  ui.elements['reload-accounts'].events.click();
+  await flush();
+  expect(ui.elements['account-rows'].children).toHaveLength(1);
+  expect(ui.elements['account-stat-total'].textContent).toBe('1');
+  expect(ui.elements['account-status'].textContent)
+    .toBe(ui.window.ADMIN_TRANSLATIONS.vi['js.accounts.004']);
+});
 it('tài khoản thống kê, tìm kiếm, lọc vai trò/trạng thái và phân trang', async () => {
   const ui = await accountsUi();
   ui.state.list = Array.from({ length: 12 }, (_, index) => ({ id: `account-${index}`, username: `user_${String(index).padStart(2, '0')}`,
@@ -303,7 +324,6 @@ it('đổi ngôn ngữ tài khoản giữ nguyên vai trò, trạng thái khóa,
   expect(role.children[0].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.ja['html.admin.164']);
   expect(ui.fetch.mock.calls).toHaveLength(requestCount);
 });
-
 it('account UI changes role, lock and password through separate actions', async () => {
   const ui = await accountsUi();
   let row = ui.elements['account-rows'].children[0];
@@ -326,7 +346,23 @@ it('account UI changes role, lock and password through separate actions', async 
   expect(JSON.parse(reset[1].body)).toEqual({ password: 'test-only-new-password' });
   expect(ui.elements['account-new-password'].value).toBe('');
 });
-
+it('cancelling role change and account lock does not send PATCH', async () => {
+  const ui = await accountsUi();
+  ui.window.confirm.mockReturnValue(false);
+  const row = ui.elements['account-rows'].children[0];
+  const role = row.children[2].children[0];
+  const actions = row.children[4].children[0].children;
+  role.value = 'ADMIN';
+  role.events.change();
+  actions[0].events.click();
+  expect(role.value).toBe('POI_MANAGER');
+  expect(ui.window.confirm).toHaveBeenCalledTimes(1);
+  actions[1].events.click();
+  expect(ui.window.confirm).toHaveBeenCalledTimes(2);
+  expect(
+    ui.fetch.mock.calls.filter(([, options]) => options?.method === 'PATCH')
+  ).toHaveLength(0);
+});
 it('signed-in ADMIN cannot lock or demote themselves, but can change their own password', async () => {
   const ui = await accountsUi();
   ui.state.list = [{ id: 'root', username: 'root_admin', role: 'ADMIN', isLocked: false }];

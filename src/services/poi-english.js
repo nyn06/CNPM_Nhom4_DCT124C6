@@ -41,5 +41,16 @@ function descriptionRetention(source, backTranslation) {
   return original.filter((word) => returned.has(word)).length / original.length;
 }
 
+const semanticStopWords = new Set(['là', 'với', 'và', 'của', 'những', 'các', 'một',
+  'có', 'cho', 'được', 'trong', 'ở']);
+const semanticTerms = (value) => (String(value || '').toLowerCase().match(/[\p{L}\p{M}]+/gu) || [])
+  .filter((word) => !semanticStopWords.has(word)).map(latin);
+function descriptionEvidence(source, backTranslation) {
+  const original = semanticTerms(source);
+  const returned = semanticTerms(backTranslation);
+  return original.length >= 2 && original.length === returned.length
+    && original.every((word, index) => word === returned[index]);
+}
+
 module.exports = { englishName: latin, englishAddress: (source, streetAddress) => localizedAddress(source, 'en', streetAddress),
-  localizedAddress, invalidEnglishDescription, descriptionRetention };
+  localizedAddress, invalidEnglishDescription, descriptionRetention, descriptionEvidence };

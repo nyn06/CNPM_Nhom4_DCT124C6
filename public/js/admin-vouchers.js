@@ -31,6 +31,16 @@
     byId(id).textContent = text;
     byId(id).dataset.tone = tone;
   }
+  let voucherMessage = {
+    key: 'js.admin_vouchers.032',
+    tone: 'neutral'
+  };
+
+  function showVoucherMessage(key, tone = 'neutral') {
+    voucherMessage = { key, tone };
+
+    notice('voucher-message', window.ADMIN_I18N.t(key), tone);
+  }
   function date(value) { return value ? new Date(value).toLocaleString(window.ADMIN_I18N?.language() || 'vi') : '—'; }
   function statusBadge(value) {
     const badge = document.createElement('span');
@@ -114,10 +124,13 @@
     state.controller?.abort();
     const controller = new AbortController();
     state.controller = controller;
-    state.lastData = null;
     state.errorKey = null;
-    clear();
-    notice('voucher-list-status', (window.ADMIN_I18N?.t('js.admin_vouchers.009') ?? 'Đang tải dữ liệu…'));
+    if (!state.lastData) clear();
+
+    notice(
+      'voucher-list-status',
+      window.ADMIN_I18N.t('js.admin_vouchers.009')
+    );
     const query = new URLSearchParams({
       page: String(state.page),
       status: byId('voucher-filter').value,
@@ -135,10 +148,17 @@
       renderPage(data);
     } catch (error) {
       if (!disposed && state.controller === controller) {
-        clear();
-        state.lastData = null;
-        state.errorKey = error.name === 'AbortError' ? 'js.admin_vouchers.017' : 'js.admin_vouchers.007';
-        notice('voucher-list-status', (window.ADMIN_I18N?.t(state.errorKey) ?? 'Không tải được dữ liệu. Hãy thử lại.'), 'error');
+        if (!state.lastData) clear();
+
+        state.errorKey = error.name === 'AbortError'
+          ? 'js.admin_vouchers.017'
+          : 'js.admin_vouchers.007';
+
+        notice(
+          'voucher-list-status',
+          window.ADMIN_I18N.t(state.errorKey),
+          'error'
+        );
       }
     } finally {
       clearTimeout(timeout);
@@ -152,7 +172,7 @@
     byId('create-voucher').disabled = true;
     createController = new AbortController();
     const timeout = setTimeout(() => createController?.abort(), 10000);
-    notice('voucher-message', (window.ADMIN_I18N?.t('js.admin_vouchers.018') ?? 'Đang tạo vé…'));
+    showVoucherMessage('js.admin_vouchers.018');
     try {
       const voucher = await request('/api/access/vouchers', { method: 'POST', signal: createController.signal,
         body: JSON.stringify({}) });
@@ -169,11 +189,18 @@
       byId('created-voucher-status').textContent = voucher.durationMinutes === null ? (window.ADMIN_I18N?.t('js.admin_vouchers.028') ?? 'QR chưa chọn gói · Chờ du khách mua vé.')
         : (window.ADMIN_I18N?.t('js.admin_vouchers.020', [voucher.durationMinutes]) ?? `Vé ${voucher.durationMinutes} phút · Chưa kích hoạt.`);
       byId('voucher-result').hidden = false;
-      notice('voucher-message', (window.ADMIN_I18N?.t('js.admin_vouchers.021') ?? 'Đã tạo vé. Lưu QR, URL hoặc mã kích hoạt ngay; danh sách không tiết lộ lại mã vé.'), 'success');
+      showVoucherMessage('js.admin_vouchers.021', 'success');
       state.page = 1;
       await load();
     } catch (error) {
-      if (!disposed) notice('voucher-message', error.name === 'AbortError' ? (window.ADMIN_I18N?.t('js.admin_vouchers.017') ?? 'Yêu cầu quá thời gian. Hãy thử lại.') : (window.ADMIN_I18N?.t('js.admin_vouchers.022') ?? 'Không tạo được vé. Hãy kiểm tra thời hạn và thử lại.'), 'error');
+      if (!disposed) {
+        showVoucherMessage(
+          error.name === 'AbortError'
+            ? 'js.admin_vouchers.017'
+            : 'js.admin_vouchers.022',
+          'error'
+        );
+      }
     } finally {
       clearTimeout(timeout);
       createController = null;
@@ -186,15 +213,24 @@
   window.ADMIN_I18N?.onChange(() => {
     if (invalidDate) dateIssue(true);
     if (state.lastData) renderPage(state.lastData);
-    else if (state.errorKey) notice('voucher-list-status', window.ADMIN_I18N.t(state.errorKey), 'error');
-    else if (state.controller) notice('voucher-list-status', window.ADMIN_I18N.t('js.admin_vouchers.009'));
+    if (state.errorKey) {
+      notice(
+        'voucher-list-status',
+        window.ADMIN_I18N.t(state.errorKey),
+        'error'
+      );
+    } else if (state.controller) {
+      notice(
+        'voucher-list-status',
+        window.ADMIN_I18N.t('js.admin_vouchers.009')
+      );
+    }
     if (createdVoucher && !byId('voucher-result').hidden) {
       byId('created-voucher-status').textContent = createdVoucher.durationMinutes === null
         ? (window.ADMIN_I18N?.t('js.admin_vouchers.028') ?? 'QR chưa chọn gói · Chờ du khách mua vé.')
         : window.ADMIN_I18N.t('js.admin_vouchers.011', [createdVoucher.durationMinutes, labels()[createdVoucher.status]]);
     }
-    if (byId('voucher-result').hidden) notice('voucher-message', window.ADMIN_I18N.t('js.admin_vouchers.032'));
-    else notice('voucher-message', window.ADMIN_I18N.t('js.admin_vouchers.021'), 'success');
+    showVoucherMessage(voucherMessage.key, voucherMessage.tone);
   });
   byId('voucher-form').addEventListener('submit', create);
   byId('reload-vouchers').addEventListener('click', load);
@@ -229,13 +265,34 @@
   byId('voucher-search-date').addEventListener('input', () => { if (invalidDate) dateIssue(malformedDate()); });
 
   byId('copy-voucher-url').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(byId('activation-url').value); notice('voucher-message', (window.ADMIN_I18N?.t('js.admin_vouchers.023') ?? 'Đã sao chép URL kích hoạt.'), 'success'); }
-    catch { notice('voucher-message', (window.ADMIN_I18N?.t('js.admin_vouchers.024') ?? 'Hãy chọn và sao chép URL trong ô phía trên.'), 'info'); }
+    const input = byId('activation-url');
+
+    try {
+      await navigator.clipboard.writeText(input.value);
+
+      showVoucherMessage('js.admin_vouchers.023', 'success');
+    } catch {
+      input.focus();
+      input.select();
+
+      showVoucherMessage('js.admin_vouchers.024', 'info');
+    }
   });
   byId('copy-activation-code').addEventListener('click', async () => {
-    try { await navigator.clipboard.writeText(byId('activation-code').value); notice('voucher-message', (window.ADMIN_I18N?.t('js.admin_vouchers.025') ?? 'Đã sao chép mã kích hoạt.'), 'success'); }
-    catch { notice('voucher-message', (window.ADMIN_I18N?.t('js.admin_vouchers.026') ?? 'Hãy chọn và sao chép mã trong ô phía trên.'), 'info'); }
+    const input = byId('activation-code');
+
+    try {
+      await navigator.clipboard.writeText(input.value);
+
+      showVoucherMessage('js.admin_vouchers.025', 'success');
+    } catch {
+      input.focus();
+      input.select();
+
+      showVoucherMessage('js.admin_vouchers.026', 'info');
+    }
   });
+  showVoucherMessage('js.admin_vouchers.032');
   function dispose() {
     disposed = true;
     state.controller?.abort();
