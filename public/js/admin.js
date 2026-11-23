@@ -48,12 +48,28 @@
   let contentController = null;
   let contentNoticeTimer = null;
   let contentNoticeRevision = 0;
+  // Ảnh đã được xác nhận trong chế độ Thêm địa điểm.
+  // Chưa gửi lên server cho đến khi địa điểm được tạo.
+  let pendingNewPoiImage = null;
+  let pendingNewPoiImagePreviewUrl = null;
 
   function message(id, text, tone = 'neutral') {
     const target = byId(id);
     target.textContent = text;
     target.dataset.tone = tone;
     if (id === 'action-status') target.hidden = !text;
+  }
+
+    // Lưu khóa dịch của thông báo ảnh đang hiển thị.
+  let poiImageStatusKey = null;
+
+  function poiImageMessage(key, tone = 'neutral') {
+    poiImageStatusKey = key;
+    message(
+      'poi-image-status',
+      key ? window.ADMIN_I18N.t(key) : '',
+      tone
+    );
   }
 
   function clearContentNotice() {
@@ -124,8 +140,18 @@
   }
 
   const poiUrl = (id) => `/api/pois/${encodeURIComponent(id)}`;
+  function resetPendingNewPoiImage() {
+  pendingNewPoiImage = null;
 
+  if (pendingNewPoiImagePreviewUrl) {
+    URL.revokeObjectURL(pendingNewPoiImagePreviewUrl);
+    pendingNewPoiImagePreviewUrl = null;
+  }
+}
   function renderPoiImage() {
+        if (mode !== 'new') {
+      resetPendingNewPoiImage();
+    }
     const section = byId('poi-image-section');
     const previewContainer = byId('poi-image-preview-container');
     const preview = byId('poi-image-preview');
@@ -135,9 +161,9 @@
     const isEditing = mode === 'edit' && !!selectedPoi;
 
     section.hidden = mode !== 'new' && !isEditing;
-byId('poi-image-upload').hidden = mode === 'new';
+byId('poi-image-upload').hidden = mode !== 'new' && !isEditing;
 fileInput.value = '';
-message('poi-image-status', '');
+poiImageMessage(null);
 
     const imageUrl = isEditing ? selectedPoi.imageUrl : null;
     const validImageUrl =
@@ -215,6 +241,43 @@ message('poi-image-status', '');
   }
 }
   async function uploadPoiImage() {
+        // Xử lý ảnh riêng khi Thêm địa điểm mới.
+    if (mode === 'new') {
+      if (mutating || selectionLoading) return;
+
+      const fileInput = byId('poi-image-file');
+      const file = fileInput.files?.[0];
+
+      if (!file) {
+        poiImageMessage('poi.image.error.noFile', 'error');
+        return;
+      }
+
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+        poiImageMessage('poi.image.error.type', 'error');
+        return;
+      }
+
+      if (file.size === 0 || file.size > 5 * 1024 * 1024) {
+        poiImageMessage('poi.image.error.size', 'error');
+        return;
+      }
+
+      if (pendingNewPoiImagePreviewUrl) {
+        URL.revokeObjectURL(pendingNewPoiImagePreviewUrl);
+      }
+
+      pendingNewPoiImage = file;
+      pendingNewPoiImagePreviewUrl = URL.createObjectURL(file);
+
+      byId('poi-image-preview').src = pendingNewPoiImagePreviewUrl;
+      byId('poi-image-preview-container').hidden = false;
+      byId('poi-image-empty').hidden = true;
+
+      poiImageMessage('poi.image.ready', 'success');
+
+      return;
+    }
     if (mutating || selectionLoading || mode !== 'edit' || !selectedPoi) return;
 
     const fileInput = byId('poi-image-file');
@@ -222,19 +285,19 @@ message('poi-image-status', '');
     const file = fileInput.files?.[0];
 
     if (!file) {
-  message('poi-image-status', window.ADMIN_I18N.t('poi.image.error.noFile'), 'error');
+  poiImageMessage('poi.image.error.noFile', 'error');
   return;
 }
 
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
     if (!allowedTypes.includes(file.type)) {
-  message('poi-image-status', window.ADMIN_I18N.t('poi.image.error.type'), 'error');
+  poiImageMessage('poi.image.error.type', 'error');
   return;
 }
 
     if (file.size > 5 * 1024 * 1024 || file.size === 0) {
-  message('poi-image-status', window.ADMIN_I18N.t('poi.image.error.size'), 'error');
+  poiImageMessage('poi.image.error.size', 'error');
   return;
 }
 
@@ -248,7 +311,7 @@ message('poi-image-status', '');
 
     uploadButton.disabled = true;
     fileInput.disabled = true;
-    message('poi-image-status', window.ADMIN_I18N.t('poi.image.uploading'));
+    poiImageMessage('poi.image.uploading');
 
     try {
       const response = await fetch(
@@ -290,7 +353,7 @@ message('poi-image-status', '');
       };
 
       renderPoiImage();
-      message('poi-image-status', window.ADMIN_I18N.t('poi.image.success'), 'success');
+      poiImageMessage('poi.image.success', 'success');
 
     } catch (error) {
       if (selectedPoi?.id === poiId && !disposed) {
@@ -713,6 +776,7 @@ message('poi-image-status', '');
     if (selectedPoi && viDirty()
       && !window.confirm((window.ADMIN_I18N?.t('js.admin.044') ?? 'Nội dung tiếng Việt chưa lưu. Tạo địa điểm mới và bỏ bản nháp?'))) return;
     clearSelection();
+    resetPendingNewPoiImage();
     mode = 'new';
     byId('selected-poi-summary').textContent = '';
     fillPoiForm({ category: 'Món ăn', geofenceRadius: 50, isActive: true });
@@ -806,9 +870,12 @@ message('poi-image-status', '');
 
 // Giữ ảnh đã chọn khi tạo POI mới.
 // File input sẽ bị xóa khi giao diện chuyển sang POI vừa tạo.
-const pendingImage = !id
-  ? byId('poi-image-file').files?.[0] ?? null
-  : null;
+const pendingImage = !id ? pendingNewPoiImage : null;
+
+if (!id && byId('poi-image-file').files?.[0] !== pendingImage) {
+  poiImageMessage('poi.image.confirmRequired', 'error');
+  return;
+}
 
 const detailsChanged = !id || ['name', 'description', 'address'].some((field) => body[field] !== selectedPoi[field]);
     const viDraft = id && viDirty() ? byId('vi-text').value : null;
@@ -1088,6 +1155,19 @@ function confirmDeletePoi() {
   byId('reload-pois').addEventListener('click', () => { if (!mutating && !listLoading) loadPois(); });
   byId('poi-form').addEventListener('submit', savePoi);
   byId('poi-image-upload').addEventListener('click', uploadPoiImage);
+    byId('poi-image-file').addEventListener('change', () => {
+    if (mode !== 'new') return;
+
+    resetPendingNewPoiImage();
+
+    const preview = byId('poi-image-preview');
+    preview.removeAttribute('src');
+
+    byId('poi-image-preview-container').hidden = true;
+    byId('poi-image-empty').hidden = false;
+
+    poiImageMessage(null);
+  });
   const radiusInput = byId('poi-radius');
   const radiusError = () => {
     radiusInput.setAttribute('aria-invalid', 'true');
@@ -1170,6 +1250,10 @@ document.addEventListener('keydown', (event) => {
   });
   window.ADMIN_I18N?.onChange(() => {
     const translate = window.ADMIN_I18N.t;
+            // Dịch lại đúng thông báo ảnh đang hiển thị.
+    if (poiImageStatusKey) {
+      byId('poi-image-status').textContent = translate(poiImageStatusKey);
+    }
     updateDeletePoiModalText();
     const allCategory = byId('poi-category-filter').children[0];
     if (allCategory) allCategory.textContent = translate('html.admin.020');
