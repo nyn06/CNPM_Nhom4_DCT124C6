@@ -21,6 +21,7 @@ router.post(
   uploadPoiImage,
   poiController.uploadPoiImage
 );
+router.delete('/pois/:id/image', ...manage, poiController.deletePoiImage);
 
 
 router.get('/pois', poiController.getPois);

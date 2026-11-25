@@ -145,6 +145,15 @@ class PoiController {
     }
   }
 
+  async deletePoiImage(req, res, next) {
+    try {
+      const poi = await poiService.updatePoi(req.params.id, { imageUrl: null });
+      res.status(200).json({ poiId: poi.id, imageUrl: null });
+    } catch (error) {
+      next(error);
+    }
+  }
+
 
   async deletePoi(req, res, next) {
     try {

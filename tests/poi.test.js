@@ -311,6 +311,21 @@ describe('DELETE /api/pois/:id', () => {
   });
 });
 
+describe('DELETE /api/pois/:id/image', () => {
+  it('removes only the selected POI image reference', async () => {
+    const first = await request(app).post('/api/pois').send(validPoi);
+    const second = await request(app).post('/api/pois').send(validPoi);
+    poiService.updatePoi(first.body.id, { imageUrl: '/uploads/pois/first.png' });
+    poiService.updatePoi(second.body.id, { imageUrl: '/uploads/pois/second.png' });
+
+    const removed = await request(app).delete(`/api/pois/${first.body.id}/image`);
+    expect(removed.statusCode).toBe(200);
+    expect(removed.body).toEqual({ poiId: first.body.id, imageUrl: null });
+    expect(poiRepository.findById(first.body.id).imageUrl).toBeNull();
+    expect(poiRepository.findById(second.body.id).imageUrl).toBe('/uploads/pois/second.png');
+  });
+});
+
 describe('POI Service: kiểm tra số không hữu hạn không biểu diễn được trong JSON', () => {
   it.each(['latitude', 'longitude', 'geofenceRadius'])(
     'từ chối NaN và Infinity cho %s khi tạo và cập nhật',

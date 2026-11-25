@@ -70,6 +70,14 @@ async function setup({ pois = [{ ...basePoi, narrations: content() }], withI18n 
     const poi = state.pois.find((item) => item.id === decodeURIComponent(match?.[1]));
     if (!poi) return json({ error: 'Missing' }, 404);
     const suffix = match[2];
+    if (suffix === '/image') {
+      if (options.method === 'DELETE') {
+        poi.imageUrl = null;
+        return json({ poiId: poi.id, imageUrl: null });
+      }
+      poi.imageUrl = `/uploads/pois/${poi.id}.png`;
+      return json({ poiId: poi.id, imageUrl: poi.imageUrl });
+    }
     if (!suffix) {
       if (options.method === 'DELETE') { state.pois = state.pois.filter((item) => item !== poi); return json(null, 204); }
       if (options.method === 'PUT') Object.assign(poi, body, { updatedAt: 'v2' });
@@ -121,11 +129,14 @@ async function setup({ pois = [{ ...basePoi, narrations: content() }], withI18n 
       .replace(/\{(\d+)\}/g, (_, index) => String(params[index])), onChange: (callback) => { listener = callback; },
     language: () => language, setLanguage: (next) => { language = next; listener(next); } };
   }
+  const objectUrl = { createObjectURL: jest.fn(() => 'blob:poi-preview'), revokeObjectURL: jest.fn() };
+  class FakeFormData { append(name, file) { this.name = name; this.file = file; } }
   vm.runInNewContext(scripts, { document: { getElementById: (id) => elements[id], createElement: element,
-    addEventListener: jest.fn() }, window, fetch, AbortController, setTimeout, clearTimeout });
+    addEventListener: jest.fn() }, window, fetch, AbortController, FormData: FakeFormData, URL: objectUrl,
+  setTimeout, clearTimeout });
   await flush();
   const cards = Object.fromEntries(codes.map((code, index) => [code, elements['language-cards'].children[index].parts]));
-  return { elements, state, fetch, window, cards, audio: elements['preview-audio'], map: window.ADMIN_POI_MAP };
+  return { elements, state, fetch, window, cards, objectUrl, audio: elements['preview-audio'], map: window.ADMIN_POI_MAP };
 }
 const requests = (ui, method, url) => ui.fetch.mock.calls.filter(([actualUrl, options]) => options.method === method && (!url || actualUrl === url));
 const click = (node) => node.events.click();
@@ -157,6 +168,87 @@ test('Admin HTML nạp bản đồ trước handler và có đầy đủ điều
   expect(['poi-search', 'poi-status-filter', 'poi-category-filter', 'poi-search-reset', 'poi-search-submit']
     .map((id) => form.indexOf(`id="${id}"`))).toEqual([...['poi-search', 'poi-status-filter', 'poi-category-filter', 'poi-search-reset', 'poi-search-submit']
     .map((id) => form.indexOf(`id="${id}"`))].sort((a, b) => a - b));
+});
+
+describe('POI image upload regression', () => {
+  async function begin() {
+    const ui = await setup({ pois: [], withI18n: true });
+    click(ui.elements['new-poi']);
+    fill(ui);
+    ui.map.confirm(10, 106);
+    return ui;
+  }
+
+  test('creates a POI without an image when files is undefined', async () => {
+    const ui = await begin();
+    submit(ui.elements['poi-form']);
+    await flush();
+    expect(requests(ui, 'POST', '/api/pois')).toHaveLength(1);
+    expect(requests(ui, 'POST', '/api/pois/created-poi/image')).toHaveLength(0);
+    expect(ui.elements['selected-id'].textContent).toContain('created-poi');
+  });
+
+  test('requires confirmation, preserves preview and uploads to the created POI', async () => {
+    const ui = await begin();
+    const file = { type: 'image/png', size: 100 };
+    ui.elements['poi-image-file'].files = [file];
+    ui.elements['poi-image-file'].events.change();
+    submit(ui.elements['poi-form']);
+    expect(requests(ui, 'POST', '/api/pois')).toHaveLength(0);
+    click(ui.elements['poi-image-upload']);
+    expect(ui.elements['poi-image-preview'].src).toBe('blob:poi-preview');
+    ui.window.ADMIN_I18N.setLanguage('en');
+    expect(ui.elements['poi-image-status'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.en['poi.image.ready']);
+    submit(ui.elements['poi-form']);
+    await flush();
+    const uploads = requests(ui, 'POST', '/api/pois/created-poi/image');
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0][1].body.file).toBe(file);
+  });
+
+  test.each([
+    [{ type: 'image/gif', size: 100 }, 'poi.image.error.type'],
+    [{ type: 'image/png', size: 0 }, 'poi.image.error.size'],
+    [{ type: 'image/png', size: 5 * 1024 * 1024 + 1 }, 'poi.image.error.size'],
+  ])('rejects invalid image before creation', async (file, key) => {
+    const ui = await begin();
+    ui.elements['poi-image-file'].files = [file];
+    click(ui.elements['poi-image-upload']);
+    expect(ui.elements['poi-image-status'].textContent).toBe(ui.window.ADMIN_TRANSLATIONS.vi[key]);
+    submit(ui.elements['poi-form']);
+    expect(requests(ui, 'POST', '/api/pois')).toHaveLength(0);
+  });
+
+  test('failed upload keeps the created POI in edit mode for retry', async () => {
+    const ui = await begin();
+    const file = { type: 'image/jpeg', size: 50 };
+    ui.elements['poi-image-file'].files = [file];
+    click(ui.elements['poi-image-upload']);
+    ui.state.overrides.set('POST /api/pois/created-poi/image', json({ error: 'failed' }, 500));
+    submit(ui.elements['poi-form']);
+    await flush();
+    expect(ui.elements['selected-id'].textContent).toContain('created-poi');
+    expect(ui.elements['action-status'].textContent).toContain(ui.window.ADMIN_TRANSLATIONS.vi['poi.image.error.server']);
+    submit(ui.elements['poi-form']);
+    await flush();
+    expect(requests(ui, 'POST', '/api/pois')).toHaveLength(1);
+    expect(requests(ui, 'PUT', '/api/pois/created-poi')).toHaveLength(1);
+  });
+
+  test('replaces and removes the image of only the selected POI', async () => {
+    const ui = await setup({ withI18n: true, pois: [{ ...basePoi, imageUrl: '/uploads/pois/old.png', narrations: {} },
+      { ...basePoi, id: 'poi-b', imageUrl: '/uploads/pois/other.png', narrations: {} }] });
+    await select(ui);
+    ui.elements['poi-image-file'].files = [{ type: 'image/webp', size: 42 }];
+    click(ui.elements['poi-image-upload']);
+    await flush();
+    expect(requests(ui, 'POST', '/api/pois/poi-a/image')).toHaveLength(1);
+    click(ui.elements['poi-image-delete']);
+    await flush();
+    expect(requests(ui, 'DELETE', '/api/pois/poi-a/image')).toHaveLength(1);
+    expect(ui.state.pois[0].imageUrl).toBeNull();
+    expect(ui.state.pois[1].imageUrl).toBe('/uploads/pois/other.png');
+  });
 });
 
 test('POI thống kê, lọc và phân trang 10 bản ghi mà vẫn giữ địa điểm đang chọn', async () => {

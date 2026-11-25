@@ -75,6 +75,15 @@ class PoiService {
 
     // Giữ các trường không được gửi; chỉ lưu những trường được phép sửa.
     const fields = this._preparePoi({ ...existing, ...data });
+    if (Object.hasOwn(data, 'imageUrl')) {
+      if (data.imageUrl !== null && (typeof data.imageUrl !== 'string'
+        || !/^\/uploads\/pois\/[a-zA-Z0-9_-]+\.(?:jpg|jpeg|png|webp)$/.test(data.imageUrl))) {
+        const error = new Error('imageUrl phải là đường dẫn ảnh POI hợp lệ');
+        error.statusCode = 400;
+        throw error;
+      }
+      fields.imageUrl = data.imageUrl;
+    }
 
     const poi = poiRepository.update(id, {
       ...fields,
