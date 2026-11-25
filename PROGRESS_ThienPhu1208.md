@@ -3,7 +3,7 @@
 **Môn học:** Công nghệ phần mềm (CNPM)\
 **Dự án:** Hệ thống thuyết minh tự động theo vị trí GPS (Auto Narration)\
 **GitHub:** [CNPM_Nhom4_DCT124C6](https://github.com/nyn06/CNPM_Nhom4_DCT124C6)\
-**Tài khoản Git:** `ThienPhu1208` (tên tác giả trước đây: `ThienPhu`)\
+**Tài khoản Git:** `ThienPhu1208`\
 **Thời gian theo dõi:** 19/10/2026 -- 26/11/2026
 
 ## 1. Mục đích
