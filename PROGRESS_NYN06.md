@@ -4,7 +4,7 @@
 **Dự án:** Hệ thống thuyết minh tự động theo vị trí GPS (Auto Narration)  
 **GitHub:** [CNPM_Nhom4_DCT124C6](https://github.com/nyn06/CNPM_Nhom4_DCT124C6)  
 **Tài khoản Git:** `nyn06`  
-**Thời gian theo dõi:** 13/09/2026 – 19/11/2026
+**Thời gian theo dõi:** 13/09/2026 – 25/11/2026
 
 ## 1. Mục đích
 
@@ -26,7 +26,8 @@ Nội dung tập trung vào các chức năng đã triển khai, thay đổi k�
 | 8 | 26/10–01/11/2026 | Hiển thị khoảng cách POI, sắp xếp các địa điểm gần nhất; phát triển giao diện Admin đa ngôn ngữ, Dashboard, quản lý voucher và cơ chế dịch POI. |
 | 9 | 02–08/11/2026 | Không có commit. |
 | 10 | 09–15/11/2026 | Điều chỉnh CI để kiểm thử SQL Server trên database riêng `AutoNarrationDBTest`; sao lưu trạng thái Git trước khi tích hợp. |
-| 11 | 16–19/11/2026 | Tích hợp các nhánh chức năng, sửa kiểm thử Frontend sau merge, cập nhật Node.js cho CI và điều chỉnh bộ kiểm thử đa ngôn ngữ QR voucher. |
+| 11 | 16–22/11/2026 | Tích hợp các nhánh chức năng, sửa kiểm thử Frontend sau merge, cập nhật Node.js cho CI, điều chỉnh bộ kiểm thử đa ngôn ngữ QR voucher; tích hợp DeepL để dịch mô tả POI, đồng bộ chức năng tải ảnh POI và các bản sửa lỗi đa ngôn ngữ trên Website và Admin. |
+| 12 | 23–29/11/2026 | Tích hợp bản sửa lỗi tải ảnh POI từ thành viên, xử lý xung đột mã nguồn Admin; đồng bộ chức năng xác nhận tải ảnh, xóa ảnh POI, thông báo trạng thái đa ngôn ngữ và các bộ kiểm thử Frontend, API liên quan. |
 
 ## 3. Hình ảnh minh chứng quá trình phát triển
 
@@ -80,6 +81,12 @@ Nội dung tập trung vào các chức năng đã triển khai, thay đổi k�
 | 11/11/2026 | [`61ddf50`](https://github.com/nyn06/CNPM_Nhom4_DCT124C6/commit/61ddf504a4cd100dc54d917c20945632b76206ab) | Cấu hình database kiểm thử riêng trong CI |
 | 16/11/2026 | [`7cd2844`](https://github.com/nyn06/CNPM_Nhom4_DCT124C6/commit/7cd284491502d04b76111b741abfce3d9175c9f7) | Sửa cấu hình Node.js cho thư viện Sharp |
 | 18/11/2026 | [`50042fd`](https://github.com/nyn06/CNPM_Nhom4_DCT124C6/commit/50042fde40097bfc965072bf80151e2dbb5333da) | Điều chỉnh kiểm thử đa ngôn ngữ QR voucher |
+| 19/11/2026 | [`2aa3330`](https://github.com/nyn06/CNPM_Nhom4_DCT124C6/commit/2aa3330) | Tích hợp DeepL và cải thiện hiển thị bản dịch mô tả POI |
+| 19/11/2026 | [`b88daf0`](https://github.com/nyn06/CNPM_Nhom4_DCT124C6/commit/b88daf0) | Tích hợp nhánh dịch mô tả POI bằng DeepL |
+| 19/11/2026 | [`b84a8bb`](https://github.com/nyn06/CNPM_Nhom4_DCT124C6/commit/b84a8bb) | Tích hợp chức năng tải ảnh POI |
+| 19/11/2026 | [`9a8b647`](https://github.com/nyn06/CNPM_Nhom4_DCT124C6/commit/9a8b647) | Tích hợp bản sửa lỗi đa ngôn ngữ Website |
+| 19/11/2026 | [`ef508be`](https://github.com/nyn06/CNPM_Nhom4_DCT124C6/commit/ef508be) | Tích hợp bản sửa lỗi QR và đa ngôn ngữ quản lý tài khoản Admin |
+| 25/11/2026 | [`6e24d81`](https://github.com/nyn06/CNPM_Nhom4_DCT124C6/commit/6e24d81) | Tích hợp bản sửa lỗi tải ảnh POI, xử lý xung đột Admin và đồng bộ bộ kiểm thử liên quan |
 
 ## 5. Ghi chú về lịch sử phát triển
 
@@ -93,4 +100,6 @@ Nội dung tập trung vào các chức năng đã triển khai, thay đổi k�
 
 Lịch sử commit phản ánh quá trình phát triển dự án từ khởi tạo Backend, xây dựng chức năng GPS và thuyết minh đa ngôn ngữ đến triển khai giao diện quản trị, tích hợp cơ sở dữ liệu SQL Server và thiết lập CI/CD.
 
-Tài liệu được sử dụng làm minh chứng hỗ trợ theo dõi tiến độ và giải thích các thay đổi mã nguồn trong quá trình báo cáo đồ án.
+Trong giai đoạn hoàn thiện, các công việc tập trung vào tích hợp dịch vụ DeepL, đồng bộ chức năng tải và xóa ảnh POI, hoàn thiện đa ngôn ngữ, hợp nhất các nhánh chức năng và xử lý xung đột mã nguồn nhằm nâng cao tính ổn định của hệ thống.
+
+Tài liệu được sử dụng làm minh chứng hỗ trợ theo dõi tiến độ, đánh giá đóng góp cá nhân và giải thích các thay đổi mã nguồn trong quá trình báo cáo đồ án.
