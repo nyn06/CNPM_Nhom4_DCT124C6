@@ -4,6 +4,7 @@
   let map;
   let marker;
   let radiusCircle;
+  let nearestMarker = null;
   let point = null;
   let confirmed = false;
   let searching = false;
@@ -120,8 +121,71 @@
     }
     setTimeout(() => map.invalidateSize(), 0);
   }
+  function clearNearest() {
+  if (nearestMarker) {
+    nearestMarker.remove();
+    nearestMarker = null;
+  }
+}
 
+function highlightNearest(newPoi, pois) {
+  clearNearest();
+
+  if (!map || !newPoi || !Array.isArray(pois)) return;
+  if (!valid(newPoi.latitude, newPoi.longitude)) return;
+
+  const origin = window.L.latLng(
+    newPoi.latitude,
+    newPoi.longitude
+  );
+
+  let nearest = null;
+  let minDistance = Infinity;
+
+  for (const poi of pois) {
+    if (!poi || poi.id === newPoi.id) continue;
+    if (!valid(poi.latitude, poi.longitude)) continue;
+
+    const distance = origin.distanceTo(
+      window.L.latLng(poi.latitude, poi.longitude)
+    );
+
+    if (distance < minDistance) {
+      minDistance = distance;
+      nearest = poi;
+    }
+  }
+
+  if (!nearest) return;
+
+  nearestMarker = window.L.circleMarker(
+    [nearest.latitude, nearest.longitude],
+    {
+      radius: 12,
+      color: '#b8860b',
+      fillColor: '#ffff00',
+      fillOpacity: 1,
+      weight: 3
+    }
+  ).addTo(map);
+
+  const tooltip = document.createElement('span');
+  tooltip.textContent = nearest.name;
+  nearestMarker.bindTooltip(tooltip);
+
+  map.fitBounds(
+    [
+      [newPoi.latitude, newPoi.longitude],
+      [nearest.latitude, nearest.longitude]
+    ],
+    {
+      padding: [40, 40],
+      maxZoom: 17
+    }
+  );
+}
   function load(poi) {
+    clearNearest();
     searchRevision++;
     cancelAutocomplete();
     pointRevision++;
@@ -139,6 +203,7 @@
   }
 
   function clear() {
+    clearNearest();
     searchRevision++;
     cancelAutocomplete();
     pointRevision++;
@@ -353,6 +418,13 @@
     suggestionStatus(translate(options.length ? 'js.admin_poi_map.010' : 'js.admin_poi_map.007', [options.length]));
   });
   window.addEventListener('pagehide', () => { cancelAutocomplete(); if (map) map.remove(); map = null; });
-  window.ADMIN_POI_MAP = { load, clear, refresh: () => { if (map) setTimeout(() => map.invalidateSize(), 0); },
-    location: () => (confirmed && point ? { ...point } : null) };
+  window.ADMIN_POI_MAP = {
+  load,
+  clear,
+  highlightNearest,
+  refresh: () => {
+    if (map) setTimeout(() => map.invalidateSize(), 0);
+  },
+  location: () => (confirmed && point ? { ...point } : null)
+};
 })();
