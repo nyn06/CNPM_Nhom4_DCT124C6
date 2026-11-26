@@ -23,6 +23,8 @@ beforeAll(async () => {
   if (db.recordset[0].name !== 'AutoNarrationDBTest') throw new Error('Integration connection target mismatch');
   const state = await (await getPool()).request().query(`SELECT
     (SELECT COUNT(*) FROM dbo.SchemaMigrations WHERE Version = '007_voucher_purchases.sql') AS migrationCount,
+    (SELECT COUNT(*) FROM dbo.SchemaMigrations WHERE Version = '009_account_password_changed_at.sql') AS adminMigrationCount,
+    (SELECT COUNT(*) FROM dbo.SchemaMigrations WHERE Version = '010_demo_one_minute.sql') AS demoMigrationCount,
     OBJECT_ID('dbo.VoucherPayments', 'U') AS paymentsTable,
     (SELECT state_desc FROM sys.databases WHERE name='AutoNarrationDB') AS mainState,
     (SELECT state_desc FROM sys.databases WHERE name='AutoNarrationDBTest') AS testState,
@@ -34,7 +36,8 @@ beforeAll(async () => {
   const expectedBaseline = emptyBaseline
     ? { mainState: null, vouchers: 0, sessions: 0, payments: 0 }
     : { mainState: 'ONLINE', vouchers: 59, sessions: 44, payments: 0 };
-  if (status.migrationCount !== 1 || !status.paymentsTable || status.testState !== 'ONLINE'
+  if (status.migrationCount !== 1 || status.adminMigrationCount !== 1 || status.demoMigrationCount !== 1
+    || !status.paymentsTable || status.testState !== 'ONLINE'
     || Object.entries(expectedBaseline).some(([key, value]) => status[key] !== value))
     throw new Error(`SQL integration baseline does not match the approved AutoNarrationDBTest ${emptyBaseline ? 'empty CI database' : 'snapshot'}`);
   if (process.env.DEMO_PAYMENT_ENABLED !== 'true')
@@ -106,6 +109,28 @@ test.each([15, 30, 60])('SQL purchase API covers %i minutes, price, activation a
     expect((await postAccess('demo-pay', { code })).status).toBe(409);
     expect((await postAccess('redeem', { code })).status).toBe(409);
   } finally { await cleanupPaymentVoucher(voucher); }
+});
+
+test('SQL development demo purchases one minute and creates a 60-second access session', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  const { code, voucher } = await newPaymentVoucher();
+  process.env.NODE_ENV = 'development';
+  try {
+    const packages = (await request(app).get('/api/access/packages').expect(200)).body.packages;
+    expect(packages.map((item) => item.durationMinutes)).toEqual([1, 15, 30, 60]);
+    const chosen = await postAccess('choose', { code, durationMinutes: 1 });
+    expect(chosen.status).toBe(200);
+    expect(chosen.body.payment).toMatchObject({ durationMinutes: 1, amountVnd: 1000, status: 'pending' });
+    expect((await postAccess('demo-pay', { code })).status).toBe(200);
+    const started = await postAccess('start', { code });
+    expect(started.status).toBe(200);
+    expect(started.body.durationMinutes).toBe(1);
+    expect(Date.parse(started.body.expiresAt) - Date.parse(started.body.startedAt)).toBe(60000);
+    expect(await fixtureCount('GuestSessions', voucher.id)).toBe(1);
+  } finally {
+    process.env.NODE_ENV = previousNodeEnv;
+    await cleanupPaymentVoucher(voucher);
+  }
 });
 
 test('concurrent SQL payment and Start create one payment and one GuestSession', async () => {

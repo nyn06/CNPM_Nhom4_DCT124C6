@@ -155,6 +155,34 @@ it('new QR keeps its purchased state across inspect and starts GPS only after St
   expect(ui.elements['purchase-panel'].hidden).toBe(true);
 });
 
+it('one-minute demo package is selectable and starts a one-minute countdown after payment', async () => {
+  const ui = await setup();
+  const base = { legacy: false, voucherId: 'voucher-1',
+    packages: [1, 15, 30, 60].map((durationMinutes) => ({ durationMinutes, amountVnd: durationMinutes * 1000 })),
+    demoEnabled: true };
+  const payment = { id: 'transaction-1', durationMinutes: 1, amountVnd: 1000, status: 'pending', startedAt: null };
+  ui.state.overrides.set('/api/access/inspect', json({ ...base, status: 'unselected', payment: null }));
+  ui.state.overrides.set('/api/access/choose', json({ ...base, status: 'pending', payment }));
+  ui.state.overrides.set('/api/access/demo-pay', json({ ...base, status: 'paid', payment: { ...payment, status: 'paid' } }));
+  ui.state.overrides.set('/api/access/start', json({ accessToken: token, durationMinutes: 1,
+    startedAt: new Date(Date.now()).toISOString(), expiresAt: new Date(Date.now() + 60000).toISOString(),
+    serverTime: new Date(Date.now()).toISOString() }));
+  ui.elements['voucher-code'].value = code;
+  ui.elements['access-form'].events.submit({ preventDefault: jest.fn() });
+  await flush();
+  expect(ui.elements['purchase-options'].children).toHaveLength(4);
+  const oneMinute = ui.elements['purchase-options'].children[0].children[0];
+  expect(oneMinute.value).toBe('1');
+  oneMinute.checked = true;
+  oneMinute.events.change();
+  ui.elements['purchase-pay'].click(); await flush();
+  expect(JSON.parse(requests(ui, '/api/access/choose')[0][1].body).durationMinutes).toBe(1);
+  ui.elements['purchase-pay'].click(); await flush();
+  ui.elements['purchase-start'].click(); await flush();
+  expect(ui.elements['access-countdown'].textContent).toBe('01:00');
+  expect(ui.geolocation.watchPosition).toHaveBeenCalledTimes(1);
+});
+
 it('reopening a paid QR restores the paid screen without starting its clock', async () => {
   const state = { legacy: false, status: 'paid', demoEnabled: true,
     packages: [{ durationMinutes: 30, amountVnd: 30000 }],

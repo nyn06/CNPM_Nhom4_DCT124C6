@@ -68,7 +68,7 @@
   function accept(data, accessToken) {
     const serverRemaining = Date.parse(data?.expiresAt) - Date.parse(data?.serverTime);
     const remaining = serverRemaining - Math.max(0, performance.now() - requestStartedAt);
-    if (!/^[a-f0-9]{64}$/.test(accessToken || '') || ![15, 30, 60].includes(data?.durationMinutes)
+    if (!/^[a-f0-9]{64}$/.test(accessToken || '') || ![1, 15, 30, 60].includes(data?.durationMinutes)
       || !Number.isFinite(remaining) || remaining <= 0 || serverRemaining > data.durationMinutes * 60000) {
       throw new Error(t('invalidSessionResponse'));
     }
@@ -185,7 +185,7 @@ byId('purchase-summary').textContent = '';
         pkg.amountVnd ?? pkg.priceVnd ?? pkg.price
       );
 
-      if (![15, 30, 60].includes(duration)) return;
+      if (![1, 15, 30, 60].includes(duration)) return;
 
       const label = document.createElement('label');
       label.className = 'purchase-option';
@@ -217,7 +217,7 @@ byId('purchase-summary').textContent = '';
 
     payButton.textContent = t('purchasePay');
     payButton.hidden = false;
-    payButton.disabled = ![15, 30, 60].includes(selectedDuration);
+    payButton.disabled = ![1, 15, 30, 60].includes(selectedDuration);
 
     startButton.hidden = true;
 
@@ -295,7 +295,7 @@ byId('purchase-summary').textContent = '';
     
   byId('purchase-pay').addEventListener('click', () => {
   if (purchaseStep === 'choose') {
-    if (![15, 30, 60].includes(selectedDuration)) {
+    if (![1, 15, 30, 60].includes(selectedDuration)) {
       message(t('purchaseChooseMessage'), 'error');
       return;
     }
