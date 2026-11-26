@@ -189,8 +189,9 @@ test('new voucher payment and concurrent start stay atomic in SQL Server', async
 });
 
 test('account, session, POI and multilingual audio metadata survive pool restart', async () => {
+  const createdAt = now();
   const account = { id: id(), username: `test_${hash().slice(0, 20)}`, passwordHash: '$2b$12$abcdefghijklmnopqrstuu5dQLxvVdTZfxdZLzRqqxwPqDxhIGj9y',
-    role: 'ADMIN', isLocked: false, version: 1, createdAt: now(), updatedAt: now() };
+    role: 'ADMIN', isLocked: false, version: 1, createdAt, updatedAt: createdAt, lastPasswordChangedAt: createdAt };
   const poi = { id: id(), name: "SQL test'); DELETE FROM dbo.POIs; --", description: 'Tiếng Việt', category: 'food',
     address: 'Hà Nội', streetAddress: 'Đường kiểm thử', ward: 'Phường kiểm thử', city: 'Hà Nội',
     latitude: 21.02, longitude: 105.85, geofenceRadius: 50, isActive: true,
@@ -202,7 +203,8 @@ test('account, session, POI and multilingual audio metadata survive pool restart
     await pois.create(poi);
     await pois.update(poi.id, { narrations: { vi: { text: 'Xin chào', audioFile: 'demo.wav' }, ja: { text: 'こんにちは' }, ko: { text: '안녕하세요' }, en: { text: 'Hello' } }, updatedAt: now() });
     await closePool();
-    expect((await accounts.findById(account.id)).username).toBe(account.username);
+    expect(await accounts.findById(account.id)).toMatchObject({ username: account.username,
+      lastPasswordChangedAt: createdAt });
     expect((await auth.findSession(tokenHash)).userId).toBe(account.id);
     expect((await pois.findById(poi.id)).narrations).toEqual({
       vi: { text: 'Xin chào', audioFile: 'demo.wav' }, ja: { text: 'こんにちは' },
@@ -210,6 +212,9 @@ test('account, session, POI and multilingual audio metadata survive pool restart
     });
     expect((await pois.findById(poi.id))).toMatchObject({ name: poi.name, streetAddress: poi.streetAddress,
       ward: poi.ward, city: poi.city, latitude: poi.latitude, longitude: poi.longitude });
+    const changedAt = new Date(Date.parse(createdAt) + 1000).toISOString();
+    await accounts.update(account.id, { lastPasswordChangedAt: changedAt, updatedAt: changedAt }, 1);
+    expect((await accounts.findById(account.id)).lastPasswordChangedAt).toBe(changedAt);
     await expect(accounts.update(account.id, { isLocked: true }, 0)).rejects.toMatchObject({ statusCode: 409 });
   } finally {
     const pool = await getPool();
