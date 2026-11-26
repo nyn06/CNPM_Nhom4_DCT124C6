@@ -35,6 +35,22 @@ it.each([15, 30, 60])('new QR selects %i minutes at the backend price and starts
   finally { clock.mockRestore(); }
 });
 
+it('development demo offers one minute and expires its paid access after 60 seconds', async () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'development';
+  try {
+    const voucher = access.createVoucher({}, 'http://localhost:3000');
+    const packages = (await request(app).get('/api/access/packages').expect(200)).body.packages;
+    expect(packages.map((item) => item.durationMinutes)).toEqual([1, 15, 30, 60]);
+    expect((await post('choose', { code: voucher.code, durationMinutes: 1 }).expect(200)).body.payment)
+      .toMatchObject({ durationMinutes: 1, amountVnd: 1000, status: 'pending' });
+    await post('demo-pay', { code: voucher.code }).expect(200);
+    const started = (await post('start', { code: voucher.code }).expect(200)).body;
+    expect(started.durationMinutes).toBe(1);
+    expect(Date.parse(started.expiresAt) - Date.parse(started.startedAt)).toBe(60000);
+  } finally { process.env.NODE_ENV = previousNodeEnv; }
+});
+
 it('concurrent start requests create exactly one session', async () => {
   const voucher = access.createVoucher({}, 'http://localhost:3000');
   await post('choose', { code: voucher.activationCode, durationMinutes: 30 }).expect(200);

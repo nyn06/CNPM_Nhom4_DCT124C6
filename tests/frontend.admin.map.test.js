@@ -19,22 +19,38 @@ function setup(results = [], leafletAvailable = true) {
   let mapClick;
   let dragEnd;
   let marker;
-  const map = { getZoom: () => 6, setView: jest.fn().mockReturnThis(), invalidateSize: jest.fn(),
+  const map = { getZoom: () => 6, setView: jest.fn().mockReturnThis(), fitBounds: jest.fn(), invalidateSize: jest.fn(),
     on: (name, callback) => { if (name === 'click') mapClick = callback; }, remove: jest.fn() };
   const circle = { addTo: () => circle, remove: jest.fn() };
+  const nearestMarker = { addTo: jest.fn().mockReturnThis(), bindTooltip: jest.fn(), remove: jest.fn() };
   const L = { map: jest.fn(() => map), tileLayer: () => ({ addTo: jest.fn() }), circle: jest.fn(() => circle), marker: jest.fn((coords) => {
     marker = { coords, addTo: () => marker, on: (name, callback) => { if (name === 'dragend') dragEnd = callback; },
       setLatLng: (next) => { marker.coords = next; }, getLatLng: () => ({ lat: marker.coords[0], lng: marker.coords[1] }), remove: jest.fn() };
     return marker;
-  }) };
+  }), latLng: (lat, lng) => ({ distanceTo: (other) => Math.hypot(lat - other.lat, lng - other.lng) * 111000, lat, lng }),
+  circleMarker: jest.fn(() => nearestMarker) };
   const fetch = jest.fn(async () => ({ ok: true, json: async () => ({ results }) }));
   const window = { L: leafletAvailable ? L : undefined, ADMIN_AUTH: { headers: () => ({ 'X-CSRF-Token': 'test' }), handle: jest.fn() }, addEventListener: jest.fn() };
   vm.runInNewContext(script, { document: { getElementById, createElement: () => element() }, window, fetch,
     setTimeout: (fn, delay) => delay === 0 ? fn() : setTimeout(fn, delay), clearTimeout, AbortController });
-  return { api: window.ADMIN_POI_MAP, getElementById, fetch, map, L,
+  return { api: window.ADMIN_POI_MAP, getElementById, fetch, map, L, nearestMarker,
     clickMap: (lat, lng) => mapClick({ latlng: { lat, lng } }),
     drag: (lat, lng) => { marker.coords = [lat, lng]; dragEnd(); } };
 }
+
+test('sau khi tạo POI, tô vàng POI khác gần nhất và xóa tô màu khi đổi lựa chọn', () => {
+  const ui = setup();
+  const created = { id: 'new', latitude: 10, longitude: 106 };
+  ui.api.load(created);
+  ui.api.highlightNearest(created, [created,
+    { id: 'far', name: 'Xa', latitude: 10.02, longitude: 106 },
+    { id: 'near', name: 'Gần', latitude: 10.001, longitude: 106 }]);
+  expect(ui.L.circleMarker).toHaveBeenCalledWith([10.001, 106], expect.objectContaining({ fillColor: '#ffff00' }));
+  expect(ui.nearestMarker.addTo).toHaveBeenCalledWith(ui.map);
+  expect(ui.map.fitBounds).toHaveBeenCalled();
+  ui.api.load(created);
+  expect(ui.nearestMarker.remove).toHaveBeenCalled();
+});
 
 test('không có Leaflet vẫn mở được form và giữ tọa độ POI đã lưu', () => {
   const ui = setup([], false);

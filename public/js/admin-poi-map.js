@@ -131,7 +131,7 @@
 function highlightNearest(newPoi, pois) {
   clearNearest();
 
-  if (!map || !newPoi || !Array.isArray(pois)) return;
+  if (!map || !window.L?.latLng || !window.L?.circleMarker || !newPoi || !Array.isArray(pois)) return;
   if (!valid(newPoi.latitude, newPoi.longitude)) return;
 
   const origin = window.L.latLng(

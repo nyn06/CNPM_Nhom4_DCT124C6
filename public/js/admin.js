@@ -933,14 +933,12 @@
         }
       }
       const listLoaded = await loadPois();
-const refreshed = await selectPoi(poi.id, true);
-
-if (!id && !disposed && listLoaded && selectedPoi?.id === poi.id) {
-  window.ADMIN_POI_MAP.highlightNearest(
-    { ...poi, latitude: body.latitude, longitude: body.longitude },
-    allPois
-  );
-}
+      const refreshed = await selectPoi(poi.id, true);
+      if (!id && !disposed && listLoaded && selectedPoi?.id === poi.id) {
+        window.ADMIN_POI_MAP.highlightNearest?.(
+          { ...poi, latitude: body.latitude, longitude: body.longitude }, allPois
+        );
+      }
       if (imageUploadError && !disposed) {
         poiImageMessage(imageUploadError.translationKey || 'poi.image.error.server', 'error');
       }
