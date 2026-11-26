@@ -119,7 +119,7 @@
     byId('account-modal-submit').textContent = t(own ? 'html.admin.173' : 'html.admin.174');
   }
   function openModal(account, button) {
-    if (busy) return;
+    if (busy && account.id !== auth.current()?.id) return;
     passwordTarget = account;
     lastFocus = button;
     clearModal();
@@ -130,6 +130,12 @@
     byId('account-password-modal').hidden = false;
     byId(own ? 'account-current-password' : 'account-new-password').focus();
   }
+  window.ADMIN_ACCOUNTS = {
+    openOwnPassword() {
+      const current = auth.current();
+      if (current?.role === 'ADMIN') openModal(current, byId('admin-password-reminder-change'));
+    }
+  };
   function makeButton(label, className, onClick) {
     const button = document.createElement('button');
     button.type = 'button'; button.className = `button ${className}`; button.textContent = label;

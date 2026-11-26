@@ -18,12 +18,12 @@ class AuthController {
       await service.consumeChallenge(cookie(req, config.CHALLENGE_COOKIE));
       res.clearCookie(config.CHALLENGE_COOKIE, cookieOptions(req));
       res.cookie(config.SESSION_COOKIE, result.token, { ...cookieOptions(req), maxAge: config.SESSION_TTL_MS });
-      res.json({ user: result.user, csrfToken: result.session.csrfToken,
+      res.json({ user: result.user, rotationDue: result.rotationDue, csrfToken: result.session.csrfToken,
         expiresAt: new Date(result.session.expiresAt).toISOString(), serverTime: new Date(Date.now()).toISOString() });
     } catch (error) { next(error); }
   }
   me(req, res) {
-    res.json({ user: req.admin.user, csrfToken: req.admin.session.csrfToken,
+    res.json({ user: req.admin.user, rotationDue: req.admin.rotationDue, csrfToken: req.admin.session.csrfToken,
       expiresAt: new Date(req.admin.session.expiresAt).toISOString(), serverTime: new Date(Date.now()).toISOString() });
   }
   async logout(req, res, next) {

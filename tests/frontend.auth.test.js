@@ -43,10 +43,11 @@ function environment(html, fetch, auth) {
   return { elements, events, window, context, storage };
 }
 async function loginUi() {
-  const state = { csrfStatus: 200, loginStatus: 200, network: false };
+  const state = { csrfStatus: 200, loginStatus: 200, rotationDue: false, network: false };
   const fetch = jest.fn(async (url) => {
     if (state.network) throw new TypeError('SECRET');
-    return url === '/api/auth/csrf' ? json({ csrfToken: csrf }, state.csrfStatus) : json({ error: 'SECRET internal path' }, state.loginStatus);
+    return url === '/api/auth/csrf' ? json({ csrfToken: csrf }, state.csrfStatus)
+      : json({ rotationDue: state.rotationDue, error: 'SECRET internal path' }, state.loginStatus);
   });
   const ui = environment(read('admin-login.html'), fetch);
   vm.runInNewContext(read('js/admin-translations.js'), ui.context);
@@ -132,6 +133,15 @@ it('login sends password with bound CSRF/credentials, clears password and naviga
   expect(ui.elements['login-password'].value).toBe('');
   expect(ui.window.location.replace).toHaveBeenCalledWith('/admin.html');
   expect(ui.storage.setItem).not.toHaveBeenCalled();
+});
+
+it('routes an overdue login to the one-time Admin reminder', async () => {
+  const ui = await loginUi();
+  ui.state.rotationDue = true;
+  ui.elements['login-username'].value = 'test_user';
+  ui.elements['login-password'].value = 'test-only-password';
+  await ui.elements['login-form'].events.submit({ preventDefault: jest.fn() });
+  expect(ui.window.location.replace).toHaveBeenCalledWith('/admin.html?password-reminder=1');
 });
 
 it.each([401, 403, 429, 500])('login failure HTTP %i is safe, clears password and restores controls', async (status) => {

@@ -42,6 +42,10 @@
       byId('voucher-management').hidden = user.role !== 'ADMIN';
       byId('account-management').hidden = user.role !== 'ADMIN';
       timer = setTimeout(expire, remaining);
+      if (data.rotationDue && new URL(window.location.href).searchParams.has('password-reminder')) {
+        byId('admin-password-reminder').hidden = false;
+        byId('admin-password-reminder-change').focus();
+      }
       return user;
     } catch { expire(); return null; }
     finally { clearTimeout(timeout); }
@@ -54,6 +58,19 @@
     current: () => user,
   };
   window.ADMIN_AUTH = api;
+
+  function closePasswordReminder() {
+    byId('admin-password-reminder').hidden = true;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('password-reminder');
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  }
+  byId('admin-password-reminder-later').addEventListener('click', closePasswordReminder);
+  byId('admin-password-reminder-change').addEventListener('click', () => {
+    closePasswordReminder();
+    window.location.hash = 'accounts';
+    window.ADMIN_ACCOUNTS?.openOwnPassword();
+  });
 
   const logoutButton = byId('admin-logout');
   const logoutModal = byId('admin-logout-modal');

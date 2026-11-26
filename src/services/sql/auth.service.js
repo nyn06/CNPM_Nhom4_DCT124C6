@@ -33,7 +33,7 @@ class AuthService {
       await repository.createSession(session);
       if (validToken(oldToken)) await repository.deleteSession(hashToken(oldToken));
       repository.clearUserAttempts(userKey);
-      return { token, session, user: accountService.publicAccount(current) };
+      return { token, session, user: accountService.publicAccount(current), rotationDue: current.role === 'ADMIN' && accountService.passwordReminderDue(current) };
     } finally { inFlight--; }
   }
   async authenticate(token) {
@@ -44,7 +44,7 @@ class AuthService {
       if (session) await repository.deleteSession(session.tokenHash);
       throw error('Phiên quản trị đã hết hạn hoặc không còn hợp lệ.', 401);
     }
-    return { session, user: accountService.publicAccount(account) };
+    return { session, user: accountService.publicAccount(account), rotationDue: account.role === 'ADMIN' && accountService.passwordReminderDue(account) };
   }
   async logout(token) { if (validToken(token)) await repository.deleteSession(hashToken(token)); }
   async getCsrf(sessionToken, challengeToken) {

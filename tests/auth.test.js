@@ -51,6 +51,20 @@ it('logs in with username/password, hashes the session token and exposes only sa
   expect(await bcrypt.compare(fixture.password, seed.passwordHash)).toBe(true);
 });
 
+it('reminds at 24 hours and stops after a successful personal password change', async () => {
+  accounts.update(seed.id, { lastPasswordChangedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() });
+  const oldSession = await root();
+  expect(oldSession.response.body.rotationDue).toBe(true);
+  expect((await me(oldSession)).body.rotationDue).toBe(true);
+  const nextPassword = 'Next-valid-password-123';
+  await request(app).post('/api/accounts/me/password').set('Cookie', oldSession.cookie)
+    .set('X-CSRF-Token', oldSession.response.body.csrfToken)
+    .send({ currentPassword: fixture.password, newPassword: nextPassword }).expect(200);
+  expect(Date.now() - Date.parse(accounts.findById(seed.id).lastPasswordChangedAt)).toBeLessThan(60_000);
+  const fresh = await login(app, fixture.username, nextPassword);
+  expect(fresh.response.body.rotationDue).toBe(false);
+});
+
 it.each(['bad-password', 'unknown-user', 'locked-user'])('invalid login uses one generic response for %s', async (kind) => {
   if (kind === 'locked-user') accounts.update('manager', { isLocked: true });
   const user = kind === 'unknown-user' ? 'does_not_exist' : kind === 'locked-user' ? 'fixture_manager' : fixture.username;

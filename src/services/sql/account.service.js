@@ -10,6 +10,9 @@ class AccountService {
     return { id: account.id, username: account.username, role: account.role, isLocked: account.isLocked,
       createdAt: account.createdAt, updatedAt: account.updatedAt };
   }
+  passwordReminderDue(account) {
+    return Date.now() - Date.parse(account.lastPasswordChangedAt) >= 24 * 60 * 60 * 1000;
+  }
   async assertAdmin(actorId) {
     const actor = await repository.findById(actorId);
     if (!actor || actor.isLocked || actor.role !== 'ADMIN') throw error('Không có quyền quản lý tài khoản.', 403);
@@ -22,7 +25,7 @@ class AccountService {
   _account(name, hash, role) {
     const now = new Date(Date.now()).toISOString();
     return { id: crypto.randomUUID(), username: name, passwordHash: hash, role, isLocked: false,
-      version: 1, createdAt: now, updatedAt: now };
+      version: 1, createdAt: now, updatedAt: now, lastPasswordChangedAt: now };
   }
   async bootstrap(env = process.env) {
     const existing = await repository.findAll();
@@ -66,7 +69,8 @@ class AccountService {
     const hash = await passwordHash(data.password);
     await this.assertAdmin(actorId);
     // Prevent a late reset from overwriting a concurrently changed account.
-    const updated = await repository.update(id, { passwordHash: hash, updatedAt: new Date(Date.now()).toISOString() }, current.version);
+    const now = new Date(Date.now()).toISOString();
+    const updated = await repository.update(id, { passwordHash: hash, updatedAt: now, lastPasswordChangedAt: now }, current.version);
     await authRepository.revokeUser(id);
     return this.publicAccount(updated);
   }
@@ -80,7 +84,8 @@ class AccountService {
     if (data.currentPassword === data.newPassword) throw error('New password must differ from the current password.', 400);
     const hash = await passwordHash(data.newPassword);
     await this.assertAdmin(actorId);
-    const updated = await repository.update(actorId, { passwordHash: hash, updatedAt: new Date(Date.now()).toISOString() }, current.version);
+    const now = new Date(Date.now()).toISOString();
+    const updated = await repository.update(actorId, { passwordHash: hash, updatedAt: now, lastPasswordChangedAt: now }, current.version);
     await authRepository.revokeUser(actorId);
     return this.publicAccount(updated);
   }

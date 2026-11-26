@@ -1,5 +1,7 @@
 window.ADMIN_TRANSLATIONS = {
   "vi": {
+    "admin.passwordReminder.message": "Bạn chưa thay đổi mật khẩu trong vòng 24 giờ. Vui lòng thay đổi mật khẩu để đảm bảo an toàn tài khoản.",
+    "admin.passwordReminder.later": "Để sau",
     "poi.image.title": "Hình ảnh địa điểm",
     "poi.image.help": "Tải ảnh JPG, PNG hoặc WebP. Dung lượng tối đa 5 MB.",
     "poi.image.alt": "Hình ảnh địa điểm",
@@ -451,6 +453,8 @@ window.ADMIN_TRANSLATIONS = {
     "html.admin.190": "Gói / giá / thanh toán"
   },
   "en": {
+    "admin.passwordReminder.message": "You have not changed your password in the past 24 hours. Please change it to keep your account secure.",
+    "admin.passwordReminder.later": "Later",
     "poi.image.title": "Location image",
     "poi.image.help": "Upload a JPG, PNG or WebP image. Maximum size: 5 MB.",
     "poi.image.alt": "Location image",
@@ -902,6 +906,8 @@ window.ADMIN_TRANSLATIONS = {
     "html.admin.190": "Package / Price / Payment"
   },
   "ja": {
+    "admin.passwordReminder.message": "24時間以内にパスワードを変更していません。アカウントの安全のため、パスワードを変更してください。",
+    "admin.passwordReminder.later": "後で",
     "poi.image.title": "スポットの画像",
     "poi.image.help": "JPG、PNG、WebP形式の画像をアップロードできます。最大5 MB。",
     "poi.image.alt": "スポットの画像",
@@ -1353,6 +1359,8 @@ window.ADMIN_TRANSLATIONS = {
     "html.admin.190": "プラン / 料金 / 支払い"
   },
   "ko": {
+    "admin.passwordReminder.message": "지난 24시간 동안 비밀번호를 변경하지 않았습니다. 계정 보안을 위해 비밀번호를 변경해 주세요.",
+    "admin.passwordReminder.later": "나중에",
     "poi.image.title": "장소 이미지",
     "poi.image.help": "JPG, PNG 또는 WebP 이미지를 업로드하세요. 최대 크기: 5 MB.",
     "poi.image.alt": "장소 이미지",

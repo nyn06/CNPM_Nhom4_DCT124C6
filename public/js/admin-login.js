@@ -77,7 +77,11 @@
         body: JSON.stringify({ username: byId('login-username').value, password: byId('login-password').value }),
       });
       if (disposed) return;
-      if (response.ok) { window.location.replace('/admin.html'); return; }
+      if (response.ok) {
+        const data = await response.json();
+        window.location.replace(data.rotationDue ? '/admin.html?password-reminder=1' : '/admin.html');
+        return;
+      }
       messageKey(response.status === 401 ? 'js.admin_login.006'
         : response.status === 429 ? 'js.admin_login.007'
           : response.status === 403 ? 'js.admin_login.008' : 'js.admin_login.009');
