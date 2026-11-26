@@ -4,7 +4,11 @@ const shortCode = require('./activation-code');
 
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const error = (message, statusCode, code) => Object.assign(new Error(message), { statusCode, code });
-const prices = () => [15, 30, 60].map((durationMinutes) => {
+const prices = () => [
+  ...(process.env.NODE_ENV === 'development' &&
+      process.env.DEMO_PAYMENT_ENABLED === 'true' ? [1] : []),
+  15, 30, 60
+].map((durationMinutes) => {
   const configured = process.env[`TOUR_PRICE_${durationMinutes}`];
   const amountVnd = configured === undefined ? durationMinutes * 1000 : Number(configured);
   if (!Number.isSafeInteger(amountVnd) || amountVnd <= 0 || amountVnd > 2147483647)
